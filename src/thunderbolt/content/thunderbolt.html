@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/html" lang="en">
+<!-- Copyright 2024, J. B. Otterson N1KDO. -->
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=0.75, minimum-scale=0.6, maximum-scale=1.5">
+    <!--<link rel="shortcut icon" href="favicon.png" type="image/png">-->
+
+    <title>Thunderbolt IOT Access</title>
+</head>
+<style>
+    body {
+        background-color: #ddd;
+        border-style: double;
+        font-family: sans-serif;
+        font-size: 10pt;
+        margin: 0;
+        height: 350px;
+        width: 500px;
+    }
+    .author {
+        font-size: 8pt;
+        font-weight: bold;
+        text-align: right;
+        position: absolute;
+        top: 340px;
+        left: 400px;
+        width: 100px;
+    }
+    .author a:link, .author a:visited, .author a:hover {
+        color: black;
+        text-decoration: none;
+    }
+    .bottom_links {
+        font-size: 8pt;
+        font-weight: bold;
+        color: black;
+        text-align: left;
+        position: absolute;
+        top: 340px;
+        width: 120px;
+    }
+    .bottom_links a:link, .bottom_links a:visited, .bottom_links a:hover {
+        color: blue;
+        text-decoration: none;
+        padding-right: 4px;
+    }
+    .data_table {
+        font-size: 8.5pt;
+        display: grid;
+        grid-template-columns: 50% 50%;
+        margin: 10px 0 0 0;
+    }
+    .header {
+        text-align: center;
+        font-size: 24pt;
+        font-weight: bold;
+        border-bottom: 24px;
+    }
+    .item_name {
+        text-align: right;
+        font-weight: bold;
+    }
+    .item_value {
+        padding-left: 0.5em;
+    }
+    .item_value_green {
+        color: #009900;
+        padding-left: 0.5em;
+    }
+    .item_value_red {
+        color: #ff0000;
+        padding-left: 0.5em;
+    }
+    div.refresh_radio {
+        border: 1px solid black;
+        margin: 10px 150px 0 150px;
+        text-align: left;
+    }
+    .refresh_radio_label {
+        font-weight: bold;
+        text-align: center;
+    }
+
+    .two_columns {
+        display: grid;
+        grid-template-columns: 50% 50%;
+    }
+
+</style>
+<!--suppress JSUnusedLocalSymbols -->
+<script>
+    let auto_updates = 0;
+    let update_secs = 0;
+    let update_timeout = 0;
+    let thunderbolt_data = [];
+    const receiver_modes = ["Automatic (2D/3D)",
+        "Single Satellite (Time)",
+        "2 is not used",
+        "Horizontal (2D)",
+        "Full Position (3D)",
+        "DGPS Reference",
+        "Clock Hold (2D)",
+        "Overdetermined Clock"];
+    const discipline_modes = ["Normal",
+        "Power-Up",
+        "Auto Holdover",
+        "Manual Holdover",
+        "Recovery",
+        "Not Used",
+        "Disciplining disabled"];
+    const gps_status_map = new Map([[0, "Doing fixes"],
+    [1, "Don’t have GPS time"],
+    [3, "PDOP is too high"],
+    [8, "No usable sats"],
+    [9,"Only 1 usable sat"],
+    [0x0a, "Only 2 usable sats"],
+    [0x0b, "Only 3 usable sats"],
+    [0x0c, "The chosen sat is unusable"],
+    [0x10, "TRAIM rejected the fix"]]);
+
+    function page_load() {
+        get_status();
+    }
+
+    function post_request(url, payload) {
+        let xmlHttp = new XMLHttpRequest();
+        if (xmlHttp == null) {
+            alert("no xmlhttp -- try a newer browser?");
+            return;
+        }
+        xmlHttp.open("POST", url, true);
+        xmlHttp.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+        xmlHttp.send(payload);
+        // update the UI after a short period
+        if (update_timeout !== 0) {
+            clearTimeout(update_timeout)
+            update_timeout = 0;
+        }
+        update_timeout = setTimeout(get_status, 500);
+    }
+
+
+    function process_get_status_response(message) {
+        let status_data = JSON.parse(message);
+        thunderbolt_data = status_data["thunderbolt_data"];
+        let connected_value         = document.getElementById("connected_value");
+        let receiver_mode_value     = document.getElementById("receiver_mode_value");
+        let discipline_mode_value   = document.getElementById("discipline_mode_value");
+        let holdover_duration_value = document.getElementById("holdover_duration_value");
+        let gps_status_value        = document.getElementById("gps_status_value");
+        let minor_alarms_value      = document.getElementById("minor_alarms_value");
+        let critical_alarms_value   = document.getElementById("critical_alarms_value");
+        let latitude_value          = document.getElementById("latitude_value");
+        let longitude_value         = document.getElementById("longitude_value");
+        let altitude_value          = document.getElementById("altitude_value");
+        let satellites_value        = document.getElementById("satellites_value");
+        let fix_dim_value           = document.getElementById("fix_dim_value");
+        let unixtime_value          = document.getElementById("unixtime_value");
+        let time_value              = document.getElementById("time_value");
+
+        connected_value.innerHTML = thunderbolt_data.connected ? "True" : "False";
+        connected_value.className = thunderbolt_data.connected ? "item_value_green" : "item_value_red";
+        receiver_mode_value.innerHTML = receiver_modes[thunderbolt_data["receiver_mode"]];
+        receiver_mode_value.className = thunderbolt_data["receiver_mode"] == 7 ? "item_value_green" : "item_value_red";
+        discipline_mode_value.innerHTML = discipline_modes[thunderbolt_data["discipline_mode"]];
+        discipline_mode_value.className = thunderbolt_data["discipline_mode"] == 0 ? "item_value_green" : "item_value_red";
+        holdover_duration_value.innerHTML = thunderbolt_data['holdover_duration'] + ' sec.';
+        let gps_status = gps_status_map.get(thunderbolt_data["gps_status"]);
+        gps_status_value.innerHTML = gps_status;
+        gps_status_value.className = (thunderbolt_data["gps_status"] == 0) ?  "item_value_green" : "item_value_red";
+        minor_alarms_value.innerHTML = thunderbolt_data['minor_alarms']
+        minor_alarms_value.className = thunderbolt_data["minor_alarms"] == 0 ? "item_value_green" : "item_value_red";
+
+        critical_alarms_value.innerHTML = thunderbolt_data['critical_alarms'];
+        critical_alarms_value.className = thunderbolt_data["minor_alarms"] == 0 ? "item_value_green" : "item_value_red";
+
+        latitude_value.innerHTML = thunderbolt_data["latitude"];
+        longitude_value.innerHTML = thunderbolt_data["longitude"];
+        altitude_value.innerHTML = thunderbolt_data["altitude"];
+        satellites_value.innerHTML = thunderbolt_data["satellites"];
+        fix_dim_value.innerHTML = thunderbolt_data["fix_dim"];
+        unixtime_value.innerHTML = thunderbolt_data["unixtime"];
+        time_value.innerHTML = thunderbolt_data["time"];
+
+        if (update_timeout !== 0) {
+            clearTimeout(update_timeout)
+            update_timeout = 0;
+        }
+
+        let button_secs = update_secs;
+        if (auto_updates > 0) {
+            update_timeout = setTimeout(get_status, 1000);
+            button_secs = 1;
+            auto_updates--;
+        } else {
+            if (update_secs > 0) {
+                update_timeout = setTimeout(get_status, update_secs * 1000);
+            }
+        }
+
+        // set the radio buttons for automatic updating
+        document.getElementById('refresh_radio_0').checked = (button_secs === 0);
+        document.getElementById('refresh_radio_1').checked = (button_secs === 1);
+        document.getElementById('refresh_radio_5').checked = (button_secs === 5);
+
+    }
+
+    function get_status() {
+        let xmlHttp = new XMLHttpRequest();
+        if (xmlHttp == null) {
+            alert("get a better browser!");
+            return;
+        }
+        xmlHttp.onreadystatechange = function () {
+            if (xmlHttp.readyState === 4 && xmlHttp.status === 200) {
+                process_get_status_response(xmlHttp.responseText);
+            }
+        }
+        xmlHttp.open("GET", "/api/status", true);
+        xmlHttp.send();
+    }
+
+    function set_refresh(secs) {
+        update_secs = secs
+        if (update_secs === 0) {
+            if (update_timeout !== 0) {
+                clearTimeout(update_timeout)
+                update_timeout = 0;
+            }
+        } else {
+            get_status();
+        }
+    }
+
+</script>
+
+<body onload="page_load()">
+<div class="header">Thunderbolt Monitor</div>
+<div class="two_columns">
+    <div class="data_table">
+            <div class="item_name">Connected:</div><div class="item_value" id="connected_value"></div>
+            <div class="item_name">Receiver Mode:</div><div class="item_value" id="receiver_mode_value"></div>
+            <div class="item_name">Discipline Mode:</div><div class="item_value" id="discipline_mode_value"></div>
+            <div class="item_name">Holdover Duration:</div><div class="item_value" id="holdover_duration_value"></div>
+            <div class="item_name">GPS Status:</div><div class="item_value" id="gps_status_value"></div>
+            <div class="item_name">Minor Alarms:</div><div class="item_value" id="minor_alarms_value"></div>
+            <div class="item_name">Critical Alarms:</div><div class="item_value" id="critical_alarms_value"></div>
+        </div>
+        <div class="data_table">
+            <div class="item_name">Latitude:</div><div class="item_value" id="latitude_value"></div>
+            <div class="item_name">Longitude:</div><div class="item_value" id="longitude_value"></div>
+            <div class="item_name">Altitude:</div><div class="item_value" id="altitude_value"></div>
+            <div class="item_name">Satellites:</div><div class="item_value" id="satellites_value"></div>
+            <div class="item_name">Fix Dimension:</div><div class="item_value" id="fix_dim_value"></div>
+            <div class="item_name">UnixTime:</div><div class="item_value" id="unixtime_value"></div>
+            <div class="item_name">Time:</div><div class="item_value" id="time_value"></div>
+    </div>
+</div>
+<div class="row">
+        <div class="refresh_radio">
+            <div class="refresh_radio_label">Auto-Refresh</div>
+            <input type="radio" name="refresh_radio" id="refresh_radio_0" value="0" onclick="set_refresh(0)"/>
+            <label for="refresh_radio_0">Never</label><br>
+            <input type="radio" name="refresh_radio" id="refresh_radio_1" value="1" onclick="set_refresh(1)"/>
+            <label for="refresh_radio_1">1 second</label><br>
+            <input type="radio" name="refresh_radio" id="refresh_radio_5" value="5" onclick="set_refresh(5)"/>
+            <label for="refresh_radio_5">5 seconds</label><br>
+        </div>
+    </div>
+<div class="row">
+        <div class="bottom_links">
+            <a href="setup.html">Setup</a>
+        </div>
+        <div class="author"><a href="https://www.n1kdo.com" target="_blank">N1KDO</a> 20240523</div>
+</div>
+</body>
+</html>

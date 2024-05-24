@@ -110,8 +110,6 @@ DEFAULT_WEB_PORT = 80
 
 # globals...
 keep_running = True
-username = ''
-password = ''
 http_server = HttpServer(content_dir='content/')
 thunderbolt = None
 
@@ -276,25 +274,24 @@ async def api_restart_callback(http, verb, args, reader, writer, request_headers
 # Thunderbolt specific APIs
 # noinspection PyUnusedLocal
 async def api_status_callback(http, verb, args, reader, writer, request_headers=None):
-    response = b'ok\r\n'
+    payload = {'thunderbolt_data': thunderbolt.get_status()}
+    response = json.dumps(payload).encode('utf-8')
     http_status = 200
-    bytes_sent = http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
+    bytes_sent = http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
     return bytes_sent, http_status
 
 
 async def main():
-    global keep_running, username, password, thunderbolt
+    global keep_running, thunderbolt
 
     logging.info('Starting...', 'main:main')
 
     config = read_config()
-    username = config.get('username')
-    password = config.get('password')
 
     if upython:
         thunderbolt_port = '0'
     else:
-        thunderbolt_port = 'com4'
+        thunderbolt_port = 'com4'  # DEBUG FIXME
 
     web_port = safe_int(config.get('web_port') or DEFAULT_WEB_PORT, DEFAULT_WEB_PORT)
     if web_port < 0 or web_port > 65535:
@@ -322,13 +319,12 @@ async def main():
         http_server.add_uri_callback('/api/rename_file', api_rename_file_callback)
         http_server.add_uri_callback('/api/restart', api_restart_callback)
 
-        # KPA500 specific
         if thunderbolt_port is not None:
             thunderbolt = Thunderbolt(port_name=thunderbolt_port)
-#            http_server.add_uri_callback('/api/kpa_clear_fault', api_kpa_clear_fault_callback)
             http_server.add_uri_callback('/api/status', api_status_callback)
             # this task talks to the thunderbolt hardware.
             logging.info(f'Starting Thunderbolt serial port service', 'main:main')
+            thunderbolt_alarms = asyncio.create_task(thunderbolt.alarm_server())
             thunderbolt_server = asyncio.create_task(thunderbolt.serial_server())
 
         logging.info(f'Starting web service on port {web_port}', 'main:main')
@@ -359,8 +355,8 @@ async def main():
 
 
 if __name__ == '__main__':
-    logging.loglevel = logging.INFO
-    # logging.loglevel = logging.DEBUG
+    # logging.loglevel = logging.INFO
+    logging.loglevel = logging.DEBUG
     logging.info('starting', 'main:__main__')
     try:
         asyncio.run(main())

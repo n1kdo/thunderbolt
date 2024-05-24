@@ -34,7 +34,7 @@ import struct
 from datetime import datetime, timezone
 
 from serialport import SerialPort
-from utils import upython
+from utils import upython, milliseconds
 
 if upython:
     import micro_logging as logging
@@ -60,11 +60,8 @@ RS_READ_DLE = 2  # reading data, last was DLE
 # size of serial buffer
 BUFFER_SIZE = 256  # message 0x58 can be 170 bytes.
 
-# GPS Epoch date as Julian Date for January 6, 1980 at 00:00Z
-GPS_EPOCH_JD  = 2444244.50000
+# GPS Epoch date (January 6, 1980 at 00:00Z) as Unix Time
 GPS_EPOCH_AS_UNIX_TIME = 315964800
-# Unix Epoc as Julian Date for January 1, 1970 at 00:00Z
-UNIX_EPOCH_JD = 2440587.50000
 
 
 class Thunderbolt:
@@ -73,6 +70,7 @@ class Thunderbolt:
         self.port_name = port_name
         self.device_port = SerialPort(name=port_name, baudrate=9600, timeout=0)  # timeout is zero for non-blocking
         self.run = True
+        self.connected = False
         # thunderbolt data
         self.receiver_mode = -1
         self.discipline_mode = -1
@@ -86,7 +84,35 @@ class Thunderbolt:
         self.satellites = []
         self.fix_dim = 0
         self.unixtime = -1
+        self.last_unixtime = -1
         self.tm = ''
+        self.last_seen_tm = 0
+
+    def get_status(self):
+        return {
+            'connected': self.connected,
+            'receiver_mode': self.receiver_mode,
+            'discipline_mode': self.discipline_mode,
+            'holdover_duration': self.holdover_duration,
+            'gps_status': self.gps_status,
+            'minor_alarms': self.minor_alarms,
+            'critical_alarms': self.critical_alarms,
+            'latitude': self.latitude,
+            'longitude': self.longitude,
+            'altitude': self.altitude,
+            'satellites': self.satellites,
+            'fix_dim': self.fix_dim,
+            'unixtime': self.unixtime,
+            'time': self.tm,
+        }
+
+    async def alarm_server(self):
+        while self.run:
+            await asyncio.sleep(1.0)
+            if self.last_seen_tm > milliseconds() - 60000:
+                self.connected = True
+            else:
+                self.connected = False
 
     def get_datetime(self):
         return datetime.fromtimestamp(self.unixtime, timezone.utc)
@@ -123,6 +149,7 @@ class Thunderbolt:
                         offset += 1
                 elif reader_state == RS_READ_DLE:
                     if b == ETX:
+                        self.last_seen_tm = milliseconds()  # there is serial traffic
                         if not self.process_buffer(buffer, offset):
                             print('error processing buffer!')
                             print('raw bytes:\n' + hexdump_buffer(raw[0:raw_offset]))
@@ -149,7 +176,7 @@ class Thunderbolt:
     def process_buffer(self, buffer, offset):
         # logging.loglevel = logging.WARNING  # TODO FIXME
         pkt_id = buffer[0]
-        logging.debug(f'packet ID {pkt_id:02x}', 'Thunderbolt:process_buffer')
+        # logging.debug(f'packet ID {pkt_id:02x}', 'Thunderbolt:process_buffer')
         if pkt_id in ignore_packets:
             return True
         try:
@@ -179,30 +206,30 @@ class Thunderbolt:
                 # see Section A.9.20 in Thunderbolt book, page A-20
                 # this packet is not normally sent, but it is sent when doing a survey.
                 pass
-                #logging.info(f'Velocity Fix, XYZ ECEF, len={offset}', 'thunderbolt:process_buffer:0x43')
-                #logging.info('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                #fmt = '>xfffff'
-                #print(f'fmt = {fmt}')
-                #print(f'size={struct.calcsize(fmt)}')
-                #stuff = struct.unpack(fmt, buffer[:offset])
+                # logging.info(f'Velocity Fix, XYZ ECEF, len={offset}', 'thunderbolt:process_buffer:0x43')
+                # logging.info('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # fmt = '>xfffff'
+                # print(f'fmt = {fmt}')
+                # print(f'size={struct.calcsize(fmt)}')
+                # stuff = struct.unpack(fmt, buffer[:offset])
                 # results include:
                 # 00 x velocity
                 # 01 y velocity
                 # 02 z velocity
                 # 03 bias rate
                 # 04 time of fix
-                #print(stuff)
+                # print(stuff)
                 # don't care about this right now.
             elif pkt_id == 0x45:
                 # see Section A.9.22 in Thunderbolt book, page A-17
                 # this packet is not normally sent, but it is requested by Lady Heather.
                 pass
-                #logging.debug(f'software version information, len={offset}', 'thunderbolt:process_buffer:0x45')
-                #logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                #fmt = '>xBBBBBBBBBB'
-                #print(f'fmt = {fmt}')
-                #print(f'size={struct.calcsize(fmt)}')
-                #stuff = struct.unpack(fmt, buffer[:offset])
+                # logging.debug(f'software version information, len={offset}', 'thunderbolt:process_buffer:0x45')
+                # logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # fmt = '>xBBBBBBBBBB'
+                # print(f'fmt = {fmt}')
+                # print(f'size={struct.calcsize(fmt)}')
+                # stuff = struct.unpack(fmt, buffer[:offset])
                 # results include:
                 # 00 app major version
                 # 01 app minor version
@@ -214,13 +241,13 @@ class Thunderbolt:
                 # 07 Month
                 # 08 Day
                 # 09 year - 2000
-                #print(f'stuff = {stuff}')
+                # print(f'stuff = {stuff}')
                 # don't care about this data right now.
             elif pkt_id == 0x47:
                 # see Section A.9.22 in Thunderbolt book, page A-17
                 # this packet is not normally sent, but it is requested by Lady Heather.
-                logging.debug(f'satellite signal levels list, len={offset}', 'thunderbolt:process_buffer:0x47')
-                logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # logging.debug(f'satellite signal levels list, len={offset}', 'thunderbolt:process_buffer:0x47')
+                # logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
                 count = buffer[1]
                 fmt = '>xB' + ('Bf' * count)
                 # print(count)
@@ -243,13 +270,13 @@ class Thunderbolt:
                 # see Section A.9.23 in Thunderbolt book, page A-18
                 # this packet is not normally sent, but it is requested by Lady Heather.
                 pass
-                #logging.debug(f'Almanac Health Page, len={offset}', 'thunderbolt:process_buffer:0x49')
-                #logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # logging.debug(f'Almanac Health Page, len={offset}', 'thunderbolt:process_buffer:0x49')
+                # logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
                 #        01234567890123456789012345678901  32 satellites
-                fmt = '>xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+                # fmt = '>xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
                 # print(f'fmt = {fmt}')
                 # print(f'size={struct.calcsize(fmt)}')
-                #stuff = struct.unpack(fmt, buffer[:offset])
+                #  = struct.unpack(fmt, buffer[:offset])
                 # results include:
                 # 00 - 31 byte containing 6-bits of almanac health data for 32 satellites.
                 # print(stuff)
@@ -258,67 +285,68 @@ class Thunderbolt:
                 # see Section A.9.25 in Thunderbolt book, page A-19
                 # this packet is not normally sent, but it is requested by Lady Heather.
                 pass
-                #logging.info(f'I/O options, len={offset}', 'thunderbolt:process_buffer:0x55')
-                #logging.info('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                fmt = '>xBBBB'
+                # logging.info(f'I/O options, len={offset}', 'thunderbolt:process_buffer:0x55')
+                # logging.info('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # fmt = '>xBBBB'
                 # print(f'fmt = {fmt}')
                 # print(f'size={struct.calcsize(fmt)}')
-                #stuff = struct.unpack(fmt, buffer[:offset])
+                # stuff = struct.unpack(fmt, buffer[:offset])
                 # results include:
                 # 00 position bitmap
                 # 01 velocity bitmap
                 # 02 timing bitmap
                 # 03 aux bitmap
-                #print(f'{stuff[0]:08b} {stuff[1]:08b} {stuff[2]:08b} {stuff[3]:08b}')
+                # print(f'{stuff[0]:08b} {stuff[1]:08b} {stuff[2]:08b} {stuff[3]:08b}')
                 # don't care about this right now.
             elif pkt_id == 0x56:
                 # see Section A.9.26 in Thunderbolt book, page A-20
                 # this packet is not normally sent, but it is sent when doing a survey.
                 pass
-                #logging.info(f'Velocity Fix, East-North-Up, len={offset}', 'thunderbolt:process_buffer:0x56')
-                #logging.info('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                #fmt = '>xfffff'
-                #print(f'fmt = {fmt}')
-                #print(f'size={struct.calcsize(fmt)}')
-                #stuff = struct.unpack(fmt, buffer[:offset])
+                # logging.info(f'Velocity Fix, East-North-Up, len={offset}', 'thunderbolt:process_buffer:0x56')
+                # logging.info('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # fmt = '>xfffff'
+                # print(f'fmt = {fmt}')
+                # print(f'size={struct.calcsize(fmt)}')
+                # stuff = struct.unpack(fmt, buffer[:offset])
                 # results include:
                 # 00 east velocity
                 # 01 north velocity
                 # 02 up velocity
                 # 03 clock bias rate
                 # 04 time of fix
-                #print(f'{stuff}')
+                # print(f'{stuff}')
                 # don't care about this right now.
             elif pkt_id == 0x57:
                 # see Section A.9.27 in Thunderbolt book, page A-20
                 # this packet is not normally sent, but it is requested by Lady Heather.
                 pass
-                #logging.debug(f'Information about Last Computed Fix, len={offset}', 'thunderbolt:process_buffer:0x57')
-                #logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                fmt = '>xBBfH'
-                #print(f'fmt = {fmt}')
-                #print(f'size={struct.calcsize(fmt)}')
-                #stuff = struct.unpack(fmt, buffer[:offset])
+                # logging.debug(f'Information about Last Computed Fix, len={offset}', 'thunderbolt:process_buffer:0x57')
+                # logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # fmt = '>xBBfH'
+                # print(f'fmt = {fmt}')
+                # print(f'size={struct.calcsize(fmt)}')
+                # stuff = struct.unpack(fmt, buffer[:offset])
                 # results include:
                 # 00 source of info
                 # 01 tracking mode
                 # 02 time of last fix
                 # 03 week of last fix
-                #print(stuff)
+                # print(stuff)
                 # don't care about this right now.
             elif pkt_id == 0x58:
                 # see Section A.9.32 in Thunderbolt book, page A-26
                 # this packet is not normally sent, but it is requested by Lady Heather.
                 pass
-                #logging.debug(f'GPS System Data from Receiver, len={offset}', 'thunderbolt:process_buffer:0x58')
-                #logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # logging.debug(f'GPS System Data from Receiver, len={offset}', 'thunderbolt:process_buffer:0x58')
+                # logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
                 # don't care about this right now.
             elif pkt_id == 0x59:
                 # see Section A.9.29 in Thunderbolt book, page A-24
                 # this packet is not normally sent, but it is requested by Lady Heather.
-                logging.debug(f'Status of Satellite Disable or Ignore Health, len={offset}', 'thunderbolt:process_buffer:0x59')
-                logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                fmt = '>xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+                pass
+                # logging.debug(f'Status of Satellite Disable or Ignore Health, len={offset}', 'thunderbolt:process_buffer:0x59')
+                # logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # fmt = '>xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
                 # print(f'fmt = {fmt}')
                 # print(f'size={struct.calcsize(fmt)}')
                 # stuff = struct.unpack(fmt, buffer[:offset])
@@ -330,12 +358,13 @@ class Thunderbolt:
             elif pkt_id == 0x5a:
                 # see Section A.9.30 in Thunderbolt book, page A-25
                 # this packet is not normally sent, but it is requested by Lady Heather.
-                logging.debug(f'Raw Measurement Data, len={offset}', 'thunderbolt:process_buffer:0x5a')
-                logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                fmt = '>xBffffd'
+                pass
+                # logging.debug(f'Raw Measurement Data, len={offset}', 'thunderbolt:process_buffer:0x5a')
+                # logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # fmt = '>xBffffd'
                 # print(f'fmt = {fmt}')
                 # print(f'size={struct.calcsize(fmt)}')
-                #stuff = struct.unpack(fmt, buffer[:offset])
+                # stuff = struct.unpack(fmt, buffer[:offset])
                 # results include:
                 # 00 SV PRN number
                 # 01 sample length
@@ -343,17 +372,18 @@ class Thunderbolt:
                 # 03 code phase
                 # 04 doppler
                 # 05 time of measurement
-                #print(stuff)
+                # print(stuff)
                 # don't care about this right now.
             elif pkt_id == 0x5b:
                 # see Section A.9.31 in Thunderbolt book, page A-25
                 # this packet is not normally sent, but it is requested by Lady Heather.
-                logging.debug(f'Satellite Ephemeris Status, len={offset}', 'thunderbolt:process_buffer:0x5b')
-                logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                #fmt = '>xBfBBfBf'
-                #print(f'fmt = {fmt}')
-                #print(f'size={struct.calcsize(fmt)}')
-                #stuff = struct.unpack(fmt, buffer[:offset])
+                pass
+                # logging.debug(f'Satellite Ephemeris Status, len={offset}', 'thunderbolt:process_buffer:0x5b')
+                # logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # fmt = '>xBfBBfBf'
+                # print(f'fmt = {fmt}')
+                # print(f'size={struct.calcsize(fmt)}')
+                # stuff = struct.unpack(fmt, buffer[:offset])
                 # results include:
                 # 00 SV PRN number
                 # 01 time of collection sec
@@ -362,13 +392,14 @@ class Thunderbolt:
                 # 04 toe (Sec)
                 # 05 fix interval flag
                 # 06 SV accruracy meters
-                #print(stuff)
+                # print(stuff)
                 # don't care about this right now.
             elif pkt_id == 0x5c:
                 # see Section A.9.32 in Thunderbolt book, page A-26
                 # this packet is not normally sent, but it is requested by Lady Heather.
-                logging.debug(f'Satellite Tracking Status, len={offset}', 'thunderbolt:process_buffer:0x5c')
-                logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                pass
+                # logging.debug(f'Satellite Tracking Status, len={offset}', 'thunderbolt:process_buffer:0x5c')
+                # logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
                 # fmt = '>xBBBBffffBBBB'
                 # print(f'fmt = {fmt}')
                 # print(f'size={struct.calcsize(fmt)}')
@@ -392,8 +423,8 @@ class Thunderbolt:
                 # see Section A.9.33 in Thunderbolt book, page A-28
                 # this packet is not normally sent, but it is requested by Lady Heather.
                 pass
-                #logging.debug(f'EEPROM Segment Status, len={offset}', 'thunderbolt:process_buffer:0x5f')
-                #logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # logging.debug(f'EEPROM Segment Status, len={offset}', 'thunderbolt:process_buffer:0x5f')
+                # logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
                 # fmt = '>xBH'
                 # print(f'fmt = {fmt}')
                 # print(f'size={struct.calcsize(fmt)}')
@@ -403,14 +434,14 @@ class Thunderbolt:
                 # 01 16-bit segment status bitmask
                 # print(stuff)
                 # don't care about this right now.
-            elif pkt_id == 0x6d:  # FIXME TODO this needs help
+            elif pkt_id == 0x6d:
                 # see Section A.9.34 in Thunderbolt Book, page A-29
-                logging.debug(f'satellite selection list, len={offset}', 'thunderbolt:process_buffer:0x6d')
-                #print(hexdump_buffer(buffer[:offset]))
+                # logging.debug(f'satellite selection list, len={offset}', 'thunderbolt:process_buffer:0x6d')
+                # print(hexdump_buffer(buffer[:offset]))
                 num_sats = offset - 18
                 fmt = '>xBffff' + 'b' * num_sats
-                #print(f'fmt = {fmt}')
-                #print(f'size={struct.calcsize(fmt)}')
+                # print(f'fmt = {fmt}')
+                # print(f'size={struct.calcsize(fmt)}')
                 stuff = struct.unpack(fmt, buffer[:offset])
                 # print(stuff)
                 bm = stuff[0]
@@ -433,35 +464,31 @@ class Thunderbolt:
                     self.fix_dim = 5  # OD Clock Fix
                 else:
                     logging.warning(f'fix_dim {fix_dim} not implemented', 'thunderbolt:process_buffer:0x6d')
-                    logging.warning(f'bm bits: {bm:08b}, fix_dim bits: {fix_dim:03b}', 'thunderbolt:process_buffer:0x6d')
+                    logging.warning(f'bm bits: {bm:08b}, fix_dim bits: {fix_dim:03b}',
+                                    'thunderbolt:process_buffer:0x6d')
                     self.fix_dim = 0
                 num_sats = (bm & 0xf0) >> 4
-                logging.debug(f'fix_dim = {self.fix_dim}, num_sats = {num_sats}',
-                              'thunderbolt:process_buffer:0x6d')
-                #self.pdop = stuff[1]
-                #self.hdop = stuff[2]
-                #self.vdop = stuff[3]
-                #self.tdop = stuff[4]
+                # logging.debug(f'fix_dim = {self.fix_dim}, num_sats = {num_sats}',  'thunderbolt:process_buffer:0x6d')
                 self.satellites = sorted(list(stuff[5:]))
-                #print(stuff)
-                #print(self.fix_dim, self.pdop, self.hdop, self.vdop, self.tdop, self.satellites)
-                #print()
+                # print(stuff)
+                # print(self.fix_dim, self.pdop, self.hdop, self.vdop, self.tdop, self.satellites)
+                # print()
             elif pkt_id == 0x70:
                 # see Section A.9.36 in Thunderbolt book, page A-30
                 # this packet is not normally sent, but it is requested by Lady Heather.
                 pass
-                #logging.debug(f'Filter Configuration, len={offset}', 'thunderbolt:process_buffer:0x70')
-                #logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                #fmt = '>xBBBB'
-                #print(f'fmt = {fmt}')
-                #print(f'size={struct.calcsize(fmt)}')
-                #stuff = struct.unpack(fmt, buffer[:offset])
+                # logging.debug(f'Filter Configuration, len={offset}', 'thunderbolt:process_buffer:0x70')
+                # logging.debug('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # fmt = '>xBBBB'
+                # print(f'fmt = {fmt}')
+                # print(f'size={struct.calcsize(fmt)}')
+                # stuff = struct.unpack(fmt, buffer[:offset])
                 # results include:
                 # 00 PV filter
                 # 01 Static filter
                 # 02 Altitude filter
                 # 03 reserved
-                #print(stuff)
+                # print(stuff)
                 # don't care about this right now.
             elif pkt_id == 0x83:
                 # see Section A.9.38 in Thunderbolt book, page A-31
@@ -508,12 +535,12 @@ class Thunderbolt:
                     # the Thunderbolt E GPS Disciplined Clock User Guide
                     # this packet is not normally sent, but it is requested by Lady Heather.
                     pass
-                    #logging.warning(f'UTC/GPS Timing Mode, len={offset}', 'thunderbolt:process_buffer:0x8f 0x15')
-                    #logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                    #fmt = '>xxHddddd'
-                    #print(f'fmt = {fmt}')
-                    #print(f'size={struct.calcsize(fmt)}')
-                    #stuff = struct.unpack(fmt, buffer[:offset])
+                    # logging.warning(f'UTC/GPS Timing Mode, len={offset}', 'thunderbolt:process_buffer:0x8f 0x15')
+                    # logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                    # fmt = '>xxHddddd'
+                    # print(f'fmt = {fmt}')
+                    # print(f'size={struct.calcsize(fmt)}')
+                    # stuff = struct.unpack(fmt, buffer[:offset])
                     # results include:
                     # 00 datum index
                     # 01 dx
@@ -521,18 +548,18 @@ class Thunderbolt:
                     # 03 dz
                     # 04 A-axis
                     # 05 eccentricity squared
-                    #print(stuff)
+                    # print(stuff)
                     # don't care about this right now.
                 elif pkt_sub_id == 0x41:
                     # see Section A.10.17 in Thunderbolt book, page A-47
                     # this packet is not normally sent, but it is requested by Lady Heather.
                     pass
-                    #logging.warning(f'Stored Manufacturing Operating Parameters, len={offset}', 'thunderbolt:process_buffer:0x8f 0x41')
-                    #logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                    #fmt = '>xxhIBBBBfH'
-                    #print(f'fmt = {fmt}')
-                    #print(f'size={struct.calcsize(fmt)}')
-                    #stuff = struct.unpack(fmt, buffer[:offset])
+                    # logging.warning(f'Stored Manufacturing Operating Parameters, len={offset}', 'thunderbolt:process_buffer:0x8f 0x41')
+                    # logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                    # fmt = '>xxhIBBBBfH'
+                    # print(f'fmt = {fmt}')
+                    # print(f'size={struct.calcsize(fmt)}')
+                    # stuff = struct.unpack(fmt, buffer[:offset])
                     # results include:
                     # 00 board serial number prefix
                     # 01 board serial number
@@ -542,18 +569,18 @@ class Thunderbolt:
                     # 05 hour of build
                     # 06 oscillator offset
                     # 07 test code identification number
-                    #print(stuff)
+                    # print(stuff)
                     # don't care about this right now.
                 elif pkt_sub_id == 0x42:
                     # see Section A.10.18 in Thunderbolt book, page A-48
                     # this packet is not normally sent, but it is requested by Lady Heather.
                     pass
-                    #logging.warning(f'Stored Production Parameters, len={offset}', 'thunderbolt:process_buffer:0x8f 0x42')
-                    #logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                    #fmt = '>xxBBHIIHHH'
-                    #print(f'fmt = {fmt}')
-                    #print(f'size={struct.calcsize(fmt)}')
-                    #stuff = struct.unpack(fmt, buffer[:offset])
+                    # logging.warning(f'Stored Production Parameters, len={offset}', hunderbolt:process_buffer:0x8f 0x42')
+                    # logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                    # fmt = '>xxBBHIIHHH'
+                    # print(f'fmt = {fmt}')
+                    # print(f'size={struct.calcsize(fmt)}')
+                    # stuff = struct.unpack(fmt, buffer[:offset])
                     # results include:
                     # 00 production options prefix
                     # 01 Production number extension
@@ -563,50 +590,50 @@ class Thunderbolt:
                     # 05 reserved
                     # 06 Machine identification number
                     # 07 reserved
-                    #print(stuff)
+                    # print(stuff)
                     # don't care about this right now.
                 elif pkt_sub_id == 0x4a:
                     # see Section A.10.19 in Thunderbolt book, page A-48
                     # this packet is not normally sent, but it is requested by Lady Heather.
                     pass
-                    #logging.warning(f'PPS Characteristics, len={offset}', 'thunderbolt:process_buffer:0x8f 0x4a')
-                    #logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                    #fmt = '>xxBBBdf'
-                    #print(f'fmt = {fmt}')
-                    #print(f'size={struct.calcsize(fmt)}')
-                    #stuff = struct.unpack(fmt, buffer[:offset])
+                    # logging.warning(f'PPS Characteristics, len={offset}', 'thunderbolt:process_buffer:0x8f 0x4a')
+                    # logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                    # fmt = '>xxBBBdf'
+                    # print(f'fmt = {fmt}')
+                    # print(f'size={struct.calcsize(fmt)}')
+                    # stuff = struct.unpack(fmt, buffer[:offset])
                     # results include:
                     # 00 PPS output enable
                     # 01 reserved
                     # 02 PPS polarity
                     # 03 PPS offset or cable delay seconds
                     # 04 bias uncertainly threshold or offset meters
-                    #print(stuff)
+                    # print(stuff)
                     # don't care about this right now.
                 elif pkt_sub_id == 0x4c:
                     # see Section A.10.18 in Thunderbolt book, page A-48
                     # this packet is not normally sent, but it is requested by Lady Heather.
                     pass
-                    #logging.warning(f'Save Segments to EEPROM, len={offset}', 'thunderbolt:process_buffer:0x8f 0x4c')
-                    #logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                    #fmt = '>xxB'
-                    #print(f'fmt = {fmt}')
-                    #print(f'size={struct.calcsize(fmt)}')
-                    #stuff = struct.unpack(fmt, buffer[:offset])
+                    # logging.warning(f'Save Segments to EEPROM, len={offset}', 'thunderbolt:process_buffer:0x8f 0x4c')
+                    # logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                    # fmt = '>xxB'
+                    # print(f'fmt = {fmt}')
+                    # print(f'size={struct.calcsize(fmt)}')
+                    # stuff = struct.unpack(fmt, buffer[:offset])
                     # results include:
                     # 00 segment number
-                    #print(stuff)
+                    # print(stuff)
                     # don't care about this right now.
                 elif pkt_sub_id == 0xa0:
                     # see Section A.10.22 in Thunderbolt book, page A-50
                     # this packet is not normally sent, but it is requested by Lady Heather.
                     pass
-                    #logging.warning(f'DAC values, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa0')
-                    #logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                    #fmt = '>xxIfBBff'
-                    #print(f'fmt = {fmt}')
-                    #print(f'size={struct.calcsize(fmt)}')
-                    #stuff = struct.unpack(fmt, buffer[:offset])
+                    # logging.warning(f'DAC values, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa0')
+                    # logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                    # fmt = '>xxIfBBff'
+                    # print(f'fmt = {fmt}')
+                    # print(f'size={struct.calcsize(fmt)}')
+                    # stuff = struct.unpack(fmt, buffer[:offset])
                     # results include:
                     # 00 DAC value
                     # 01 DAC voltage
@@ -620,12 +647,12 @@ class Thunderbolt:
                     # see Section A.10.23 in Thunderbolt book, page A-51
                     # this packet is not normally sent, but it is requested by Lady Heather.
                     pass
-                    #logging.warning(f'10 MHz sense, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa1')
-                    #logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                    # logging.warning(f'10 MHz sense, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa1')
+                    # logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
                     # fmt = '>xxB'
-                    #print(f'fmt = {fmt}')
-                    #print(f'size={struct.calcsize(fmt)}')
-                    #stuff = struct.unpack(fmt, buffer[:offset])
+                    # print(f'fmt = {fmt}')
+                    # print(f'size={struct.calcsize(fmt)}')
+                    # stuff = struct.unpack(fmt, buffer[:offset])
                     # results include:
                     # 00 10 MHz sense
                     # print(stuff)
@@ -634,46 +661,47 @@ class Thunderbolt:
                     # see Section A.10.23 in Thunderbolt book, page A-51
                     # this packet is not normally sent, but it is requested by Lady Heather.
                     pass
-                    #logging.warning(f'UTC/GPS Timing Mode, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa2')
-                    #logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                    #fmt = '>xxB'
-                    #print(f'fmt = {fmt}')
-                    #print(f'size={struct.calcsize(fmt)}')
-                    #stuff = struct.unpack(fmt, buffer[:offset])
+                    # .warning(f'UTC/GPS Timing Mode, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa2')
+                    # logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                    # fmt = '>xxB'
+                    # print(f'fmt = {fmt}')
+                    # print(f'size={struct.calcsize(fmt)}')
+                    # stuff = struct.unpack(fmt, buffer[:offset])
                     # results include:
                     # 00 bitmap
-                    #print(stuff)
+                    # print(stuff)
                     # don't care about this right now.
                 elif pkt_sub_id == 0xa5:
                     # see Section A.10.26 in Thunderbolt book, page A-53
                     # this packet is not normally sent, but it is requested by Lady Heather.
                     pass
-                    #logging.warning(f'UTC/GPS Timing Mode, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa5')
-                    #logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                    #fmt = '>xxHH'
-                    #print(f'fmt = {fmt}')
-                    #print(f'size={struct.calcsize(fmt)}')
-                    #stuff = struct.unpack(fmt, buffer[:offset])
+                    # logging.warning(f'UTC/GPS Timing Mode, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa5')
+                    # logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                    # fmt = '>xxHH'
+                    # print(f'fmt = {fmt}')
+                    # print(f'size={struct.calcsize(fmt)}')
+                    # stuff = struct.unpack(fmt, buffer[:offset])
                     # results include:
                     # 00 Mask 0 bitmap
                     # 01 Mask 2 bitmap reserved
-                    #print(stuff)
+                    # print(stuff)
                     # don't care about this right now.
                 elif pkt_sub_id == 0xa7:
                     # see Section A.10.29 in Thunderbolt Book, page A-53
-                    logging.debug(f'individual satellite solutions, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa7')
+                    # logging.debug(f'individual satellite solutions, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa7')
                     # print(hexdump_buffer(buffer[:offset]))
-                    format = buffer[2]
-                    if format == 0:  #  mode 0, floating point
-                        num_sats = int((offset - 15) / 5)
-                        #print(num_sats)
-                        fmt = '>xxBIff' + ('B' * num_sats) + ('f' * num_sats)
-                        #print(f'fmt = {fmt}')
-                        #print(f'size={struct.calcsize(fmt)}')
-                        stuff = struct.unpack(fmt, buffer[:offset])
-                        #print(stuff)
+                    msg_fmt = buffer[2]
+                    if msg_fmt == 0:  # mode 0, floating point
+                        pass
+                        # num_sats = int((offset - 15) / 5)
+                        # print(num_sats)
+                        # fmt = '>xxBIff' + ('B' * num_sats) + ('f' * num_sats)
+                        # print(f'fmt = {fmt}')
+                        # print(f'size={struct.calcsize(fmt)}')
+                        # stuff = struct.unpack(fmt, buffer[:offset])
+                        # print(stuff)
                     else:
-                        logging.error('Unhandled format 1', 'process_buffer')
+                        logging.error(f'Unhandled format {msg_fmt}', 'thunderbolt:process_buffer:0x8f 0xa7')
                 elif pkt_sub_id == 0xa8:
                     # see Section A.10.28 in Thunderbolt book, page A-55
                     # this packet is not normally sent, but it is requested by Lady Heather.
@@ -681,7 +709,7 @@ class Thunderbolt:
                         logging.warning(f'Disciplining Parameters, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa8')
                         logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
                         typ = buffer[2]
-                        if typ == 0:  #  type 0, loop dynamics
+                        if typ == 0:  # type 0, loop dynamics
                             fmt = '>xxxff'
                             print(f'fmt = {fmt}')
                             print(f'size={struct.calcsize(fmt)}')
@@ -734,22 +762,22 @@ class Thunderbolt:
                     # see Section A.10.29 in Thunderbolt Book, page A-56
                     # this packet is not normally sent, but it is requested by Lady Heather.
                     pass
-                    #logging.debug(f'Self-Survey Parameters, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa9')
+                    # logging.debug(f'Self-Survey Parameters, len={offset}', 'thunderbolt:process_buffer:0x8f 0xa9')
                     # print(hexdump_buffer(buffer[:offset]))
-                    #fmt = '>xxBBII'
-                    #print(f'fmt = {fmt}')
-                    #print(f'size={struct.calcsize(fmt)}')
-                    #stuff = struct.unpack(fmt, buffer[:offset])
+                    # fmt = '>xxBBII'
+                    # print(f'fmt = {fmt}')
+                    # print(f'size={struct.calcsize(fmt)}')
+                    # stuff = struct.unpack(fmt, buffer[:offset])
                     # results include:
                     # 00 self-survey enable
                     # 01 position save flag
                     # 02 number of fixes
                     # 03 reserved
-                    #print(stuff)
+                    # print(stuff)
                     # don't care about this right now.
                 elif pkt_sub_id == 0xab:
                     # see Section A.10.30 in Thunderbolt Book, page A-56
-                    logging.debug(f'primary timing packet, len={offset}', 'thunderbolt:process_buffer:0x8f 0xab')
+                    # logging.debug(f'primary timing packet, len={offset}', 'thunderbolt:process_buffer:0x8f 0xab')
                     # print(hexdump_buffer(buffer[:offset]))
                     fmt = '>xxIHhBBBBBBH'
                     # results include:
@@ -774,12 +802,12 @@ class Thunderbolt:
                         week_number += 1024
                     # calculate time as unix time
                     self.unixtime = GPS_EPOCH_AS_UNIX_TIME + week_number * 7 * 86400 + time_of_week
-                    # print(f'unixtime={self.unixtime}')
                     self.tm = f'{stuff[6]:02d}:{stuff[5]:02d}:{stuff[4]:02d}'
-                    logging.debug(f'time: {self.tm}', 'thunderbolt:process_buffer:0x8f 0xab')
+                    # logging.debug(f'time: {self.tm}', 'thunderbolt:process_buffer:0x8f 0xab')
+                    self.connected = True
                 elif pkt_sub_id == 0xac:
                     # see Section A.10.31 in Thunderbolt Book, page A-59
-                    logging.debug(f'secondary timing packet, len={offset}','thunderbolt::0x8f 0xac')
+                    # logging.debug(f'secondary timing packet, len={offset}', 'thunderbolt::0x8f 0xac')
                     # print(hexdump_buffer(buffer[:offset]))
                     fmt = '>xxBBBIHHBBBBffIffdddxxxxxxxx'
                     # print(f'fmt = {fmt}')
@@ -806,13 +834,13 @@ class Thunderbolt:
                     #    8 bytes ignored
                     stuff = struct.unpack(fmt, buffer[:offset])
                     # print(stuff)
-                    logging.debug(f'receiver mode {stuff[0]}, disciplining mode {stuff[1]}, critical alarms {stuff[4]}, minor alarms {stuff[5]}, gps status {stuff[6]}',
-                                 'thunderbolt:process_buffer:0x8f 0xac')
+                    # logging.debug(f'receiver mode {stuff[0]}, disciplining mode {stuff[1]}, critical alarms {stuff[4]}, minor alarms {stuff[5]}, gps status {stuff[6]}',                                  'thunderbolt:process_buffer:0x8f 0xac')
                     self.receiver_mode = stuff[0]
                     self.discipline_mode = stuff[1]
                     self.holdover_duration = stuff[3]
                     self.critical_alarms = stuff[4]
                     self.minor_alarms = stuff[5]
+                    self.gps_status = stuff[6]
                     self.latitude = round(stuff[15] * 57.29578, 4)
                     self.longitude = round(stuff[16] * 57.29578, 4)
                     self.altitude = round(stuff[17] * 3.2808398950131, 1)  # meters to Feet
@@ -824,12 +852,12 @@ class Thunderbolt:
                 # see Section A.9.39 in Thunderbolt book, page A-28
                 # this packet is not normally sent, but it is requested by Lady Heather.
                 pass
-                #logging.warning(f'Request or Set GPS Receiver Configuration, len={offset}', 'thunderbolt:process_buffer:0xbb')
-                #logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                #fmt = '>xBBBffffBBBBBBBBBBBBBBBBBBBBB'
-                #print(f'fmt = {fmt}')
-                #print(f'size={struct.calcsize(fmt)}, offset={offset}')
-                #stuff = struct.unpack(fmt, buffer[:offset])
+                # logging.warning(f'Request or Set GPS Receiver Configuration, len={offset}', 'thunderbolt:process_buffer:0xbb')
+                # logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
+                # fmt = '>xBBBffffBBBBBBBBBBBBBBBBBBBBB'
+                # print(f'fmt = {fmt}')
+                # print(f'size={struct.calcsize(fmt)}, offset={offset}')
+                # stuff = struct.unpack(fmt, buffer[:offset])
                 # results include:
                 # 00 subcode
                 # 01 receiver mode
@@ -843,7 +871,7 @@ class Thunderbolt:
                 # 09 reserved
                 # 10 foliage mode
                 # 11 reserved
-                #print(stuff)
+                # print(stuff)
                 # don't care about this right now.
             else:
                 logging.warning(f'unknown packet type {pkt_id:02x}', 'thunderbolt:process_buffer')
@@ -851,13 +879,9 @@ class Thunderbolt:
                 return False
         except struct.error as exc:
             logging.error(exc)
-            # exit(1)  # DIE HORRIBLY WHILE DEBUGGING.  TODO FIXME
+            # exit(1)  # DIE HORRIBLY WHILE DEBUGGING.
             return False
         return True
-
-
-def buffer_to_hexes(buffer):
-    return ' '.join('{:02x}'.format(b) for b in buffer)
 
 
 def hexdump_buffer(buffer):
@@ -871,7 +895,7 @@ def hexdump_buffer(buffer):
         printable += chr(b) if 32 <= b <= 126 else '.'
         offset += 1
         if len(hex_bytes) >= 48:
-            result += ofs + '  ' + hex_bytes + '  ' + printable +'\n'
+            result += ofs + '  ' + hex_bytes + '  ' + printable + '\n'
             hex_bytes = ''
             printable = ''
             ofs = '{:04x}'.format(offset)
@@ -880,13 +904,3 @@ def hexdump_buffer(buffer):
         hex_bytes = hex_bytes[0:47]
         result += ofs + '  ' + hex_bytes + '   ' + printable + '\n'
     return result
-
-
-def dump_buffer(name, buffer, dump_all=False):
-    if len(buffer) < 5:
-        dump_all = True
-    if dump_all:
-        print('{} message {}'.format(name, buffer_to_hexes(buffer)))
-    else:
-        print('{} payload {}'.format(name, buffer_to_hexes(buffer[2:-2])))
-
