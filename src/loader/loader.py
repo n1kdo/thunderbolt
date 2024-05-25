@@ -31,14 +31,12 @@ from serial.tools.list_ports import comports
 from pyboard import Pyboard, PyboardError
 BAUD_RATE = 115200
 
-SRC_DIR = '../kpa500-remote/'
+SRC_DIR = '../thunderbolt/'
 FILES_LIST = [
     'content/',
     'data/',
     'http_server.py',
-    'kdevice.py',
-    'kat500.py',
-    'kpa500.py',
+    'thunderbolt.py',
     'main.py',
     'micro_logging.py',
     'utils.py',
@@ -47,8 +45,7 @@ FILES_LIST = [
     'serialport.py',
     'content/favicon.ico',
     'content/files.html',
-    'content/kat500.html',
-    'content/kpa500.html',
+    'content/thunderbolt.html',
     'content/setup.html',
 ]
 SPECIAL_FILES = ['data/config.json']
@@ -178,17 +175,18 @@ def load_device(port):
                 target.fs_rm(existing_file)
 
     # now add the files that do belong here.
+    existing_files = loader_ls(target)
     for file in FILES_LIST:
         if not file.endswith('/'):
             # if this is not a directory, get the sha1 hash of the pico-w file
             # and compare it with the sha1 hash of the local file.
             # do not send unchanged files.  This makes subsequent loader invocations much faster.
-            picow_hash = loader_sha1(target, file)
-            local_hash = local_sha1(SRC_DIR + file)
-            if picow_hash == local_hash:
-                print(f'file {file} is unchanged, not loading.')
-            else:
-                put_file(file, target)
+            if file in existing_files:
+                picow_hash = loader_sha1(target, file)
+                local_hash = local_sha1(SRC_DIR + file)
+                if picow_hash == local_hash:
+                    continue
+            put_file(file, target)
         else:
             put_file(file, target)
 

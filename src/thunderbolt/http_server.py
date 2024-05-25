@@ -34,7 +34,8 @@ from utils import milliseconds, safe_int, upython
 if upython:
     import micro_logging as logging
 else:
-    import logging
+    import micro_logging as logging
+    # import logging
 
 
 class HttpServer:
@@ -158,10 +159,10 @@ class HttpServer:
         http_status = 418  # can only make tea, sorry.
         bytes_sent = 0
         partner = writer.get_extra_info('peername')[0]
-        logging.debug(f'web client connected from {partner}', 'http_server:serve_http_client')
+        # logging.debug(f'web client connected from {partner}', 'http_server:serve_http_client')
         request_line = await reader.readline()
         request = request_line.decode().strip()
-        logging.debug(f'request: {request}', 'http_server:serve_http_client')
+        # logging.debug(f'request: "{request}"', 'http_server:serve_http_client')
         pieces = request.split(' ')
         if len(pieces) != 3:  # does the http request line look approximately correct?
             http_status = 400
@@ -225,23 +226,24 @@ class HttpServer:
                                             'http_server:serve_http_client')
                             logging.warning(f'request_content_length={request_content_length}',
                                             'http_server:serve_http_client')
-                else:  # bad request
-                    http_status = 400
-                    response = b'only GET and POST are supported'
-                    logging.warning(response, 'http_server:serve_http_client')
-                    bytes_sent = self.send_simple_response(writer, http_status, self.CT_TEXT_TEXT, response)
+                # NOTE method must be GET or POST to get here.  there is no else case.
 
-                if verb in ('GET', 'POST'):
-                    callback = self.uri_map.get(target)
-                    if callback is not None:
-                        bytes_sent, http_status = await callback(self, verb, args, reader, writer, request_headers)
-                    else:
-                        content_file = target[1:] if target[0] == '/' else target
-                        bytes_sent, http_status = self.serve_content(writer, content_file)
+                callback = self.uri_map.get(target)
+                if callback is not None:
+                    bytes_sent, http_status = await callback(self, verb, args, reader, writer, request_headers)
+                else:
+                    content_file = target[1:] if target[0] == '/' else target
+                    bytes_sent, http_status = self.serve_content(writer, content_file)
 
+        # logging.debug(f'waiting to drain {bytes_sent} bytes sent.')
         await writer.drain()
         writer.close()
-        await writer.wait_closed()
+        try:
+            await writer.wait_closed()
+        except ConnectionAbortedError as exc:
+            print(type(exc), exc, f'request: "{request}"')
+        # logging.debug(f'closed connection for request {request}')
+
         elapsed = milliseconds() - t0
         if http_status == 200:
             logging.info(f'{partner} {request} {http_status} {bytes_sent} {elapsed} ms',

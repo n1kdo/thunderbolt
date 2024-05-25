@@ -80,7 +80,16 @@
         font-weight: bold;
         text-align: center;
     }
-
+    .time {
+        border: 1px solid black;
+        border-radius: 10px;
+        text-align: center;
+        font-family: monospace;
+        font-weight: bold;
+        font-size: 32pt;
+        width: 200px;
+        margin-left: 150px;
+    }
     .two_columns {
         display: grid;
         grid-template-columns: 50% 50%;
@@ -89,8 +98,7 @@
 </style>
 <!--suppress JSUnusedLocalSymbols -->
 <script>
-    let auto_updates = 0;
-    let update_secs = 0;
+    let update_secs = 60;
     let update_timeout = 0;
     let thunderbolt_data = [];
     const receiver_modes = ["Automatic (2D/3D)",
@@ -157,6 +165,7 @@
         let fix_dim_value           = document.getElementById("fix_dim_value");
         let unixtime_value          = document.getElementById("unixtime_value");
         let time_value              = document.getElementById("time_value");
+        let time_header             = document.getElementById("time");
 
         connected_value.innerHTML = thunderbolt_data.connected ? "True" : "False";
         connected_value.className = thunderbolt_data.connected ? "item_value_green" : "item_value_red";
@@ -167,12 +176,12 @@
         holdover_duration_value.innerHTML = thunderbolt_data['holdover_duration'] + ' sec.';
         let gps_status = gps_status_map.get(thunderbolt_data["gps_status"]);
         gps_status_value.innerHTML = gps_status;
-        gps_status_value.className = (thunderbolt_data["gps_status"] == 0) ?  "item_value_green" : "item_value_red";
+        gps_status_value.className = (thunderbolt_data["gps_status"] === 0) ?  "item_value_green" : "item_value_red";
         minor_alarms_value.innerHTML = thunderbolt_data['minor_alarms']
-        minor_alarms_value.className = thunderbolt_data["minor_alarms"] == 0 ? "item_value_green" : "item_value_red";
+        minor_alarms_value.className = thunderbolt_data["minor_alarms"] === 0 ? "item_value_green" : "item_value_red";
 
         critical_alarms_value.innerHTML = thunderbolt_data['critical_alarms'];
-        critical_alarms_value.className = thunderbolt_data["minor_alarms"] == 0 ? "item_value_green" : "item_value_red";
+        critical_alarms_value.className = thunderbolt_data["critical_alarms"] === 0 ? "item_value_green" : "item_value_red";
 
         latitude_value.innerHTML = thunderbolt_data["latitude"];
         longitude_value.innerHTML = thunderbolt_data["longitude"];
@@ -182,27 +191,18 @@
         unixtime_value.innerHTML = thunderbolt_data["unixtime"];
         time_value.innerHTML = thunderbolt_data["time"];
 
-        if (update_timeout !== 0) {
-            clearTimeout(update_timeout)
-            update_timeout = 0;
-        }
+        time_header.innerHTML = thunderbolt_data["time"];
+        time_header.style.color = thunderbolt_data["minor_alarms"] === 0 ? "green" : "red";
+
 
         let button_secs = update_secs;
-        if (auto_updates > 0) {
-            update_timeout = setTimeout(get_status, 1000);
-            button_secs = 1;
-            auto_updates--;
-        } else {
-            if (update_secs > 0) {
-                update_timeout = setTimeout(get_status, update_secs * 1000);
-            }
-        }
+        reset_refresh();
 
         // set the radio buttons for automatic updating
         document.getElementById('refresh_radio_0').checked = (button_secs === 0);
         document.getElementById('refresh_radio_1').checked = (button_secs === 1);
         document.getElementById('refresh_radio_5').checked = (button_secs === 5);
-
+        document.getElementById('refresh_radio_60').checked = (button_secs === 60);
     }
 
     function get_status() {
@@ -212,14 +212,31 @@
             return;
         }
         xmlHttp.onreadystatechange = function () {
-            if (xmlHttp.readyState === 4 && xmlHttp.status === 200) {
-                process_get_status_response(xmlHttp.responseText);
+            if (xmlHttp.readyState === 4) {
+                if (xmlHttp.status === 200) {
+                    document.getElementById("auto_refresh").style.background = "inherit";
+                    process_get_status_response(xmlHttp.responseText);
+                } else {
+                    console.log("xmlHttp.status=" + xmlHttp.status);
+                    document.getElementById("auto_refresh").style.background = "red";
+                    reset_refresh();
+                }
             }
         }
         xmlHttp.open("GET", "/api/status", true);
         xmlHttp.send();
     }
 
+    function reset_refresh() {
+        if (update_timeout !== 0) {
+            clearTimeout(update_timeout)
+            update_timeout = 0;
+        }
+        if (update_secs > 0) {
+            update_timeout = setTimeout(get_status, update_secs * 1000);
+        }
+
+    }
     function set_refresh(secs) {
         update_secs = secs
         if (update_secs === 0) {
@@ -236,6 +253,7 @@
 
 <body onload="page_load()">
 <div class="header">Thunderbolt Monitor</div>
+<div class="time" id="time"></div>
 <div class="two_columns">
     <div class="data_table">
             <div class="item_name">Connected:</div><div class="item_value" id="connected_value"></div>
@@ -258,13 +276,15 @@
 </div>
 <div class="row">
         <div class="refresh_radio">
-            <div class="refresh_radio_label">Auto-Refresh</div>
+            <div class="refresh_radio_label" id="auto_refresh">Auto-Refresh</div>
             <input type="radio" name="refresh_radio" id="refresh_radio_0" value="0" onclick="set_refresh(0)"/>
             <label for="refresh_radio_0">Never</label><br>
             <input type="radio" name="refresh_radio" id="refresh_radio_1" value="1" onclick="set_refresh(1)"/>
             <label for="refresh_radio_1">1 second</label><br>
             <input type="radio" name="refresh_radio" id="refresh_radio_5" value="5" onclick="set_refresh(5)"/>
             <label for="refresh_radio_5">5 seconds</label><br>
+            <input type="radio" name="refresh_radio" id="refresh_radio_60" value="60" onclick="set_refresh(60)"/>
+            <label for="refresh_radio_60">60 seconds</label><br>
         </div>
     </div>
 <div class="row">

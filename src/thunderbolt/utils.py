@@ -36,6 +36,11 @@ def get_timestamp(tt=None):
     return f'{tt[0]:04d}-{tt[1]:02d}-{tt[2]:02d} {tt[3]:02d}:{tt[4]:02d}:{tt[5]:02d}Z'
 
 
+def get_timestamp_from_secs(secs=None):
+    tt = time.gmtime(secs)
+    return f'{tt[0]:04d}-{tt[1]:02d}-{tt[2]:02d} {tt[3]:02d}:{tt[4]:02d}:{tt[5]:02d}Z'
+
+
 def milliseconds():
     return time.ticks_ms() if upython else int(time.time() * 1000)
 

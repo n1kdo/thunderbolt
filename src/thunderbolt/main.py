@@ -1,12 +1,12 @@
 #
-# main.py -- this is the Raspberry Pi Pico W KAT500 & KPA500 Network Server.
+# main.py -- this is the Raspberry Pi Pico W Trimble Thunderbolt Network Server.
 #
 __author__ = 'J. B. Otterson'
 __copyright__ = 'Copyright 2023, 2024 J. B. Otterson N1KDO.'
 __version__ = '0.9.1'
 
 #
-# Copyright 2023, 2024 J. B. Otterson N1KDO.
+# Copyright 2024 J. B. Otterson N1KDO.
 #
 # Redistribution and use in source and binary forms, with or without modification,
 # are permitted provided that the following conditions are met:
@@ -95,17 +95,10 @@ reset_button = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)
 
 BUFFER_SIZE = 4096
 CONFIG_FILE = 'data/config.json'
-DANGER_ZONE_FILE_NAMES = (
-    'config.html',
-    'files.html',
-    'kat500.html',
-    'kpa500.html',
-)
+
 # noinspection SpellCheckingInspection
 DEFAULT_SECRET = 'thunderbolt'
 DEFAULT_SSID = 'thunderbolt'
-DEFAULT_KPA500_TCP_PORT = 4626
-DEFAULT_KAT500_TCP_PORT = 4627
 DEFAULT_WEB_PORT = 80
 
 # globals...
@@ -291,7 +284,7 @@ async def main():
     if upython:
         thunderbolt_port = '0'
     else:
-        thunderbolt_port = 'com4'  # DEBUG FIXME
+        thunderbolt_port = 'com1'
 
     web_port = safe_int(config.get('web_port') or DEFAULT_WEB_PORT, DEFAULT_WEB_PORT)
     if web_port < 0 or web_port > 65535:
@@ -355,8 +348,8 @@ async def main():
 
 
 if __name__ == '__main__':
-    # logging.loglevel = logging.INFO
-    logging.loglevel = logging.DEBUG
+    logging.loglevel = logging.INFO
+    # logging.loglevel = logging.DEBUG
     logging.info('starting', 'main:__main__')
     try:
         asyncio.run(main())
