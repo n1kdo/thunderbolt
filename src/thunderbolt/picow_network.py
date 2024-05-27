@@ -73,7 +73,6 @@ def connect_to_network(config, default_ssid='PICO-W', default_secret='PICO-W', m
         onboard = machine.Pin('LED', machine.Pin.OUT, value=0)
         onboard.on()
 
-
         try:
             logging.info(f'  setting hostname "{hostname}"', 'main:connect_to_network')
             network.hostname(hostname)
@@ -101,7 +100,9 @@ def connect_to_network(config, default_ssid='PICO-W', default_secret='PICO-W', m
         logging.info('Connecting to WLAN...', 'main:connect_to_network')
         wlan = network.WLAN(network.STA_IF)
         wlan.deinit()
+        time.sleep(1)
         wlan = network.WLAN(network.STA_IF)
+        time.sleep(1)
         # wlan.deinit turns off the onboard LED because it is connected to the CYW43
         # turn it on again.
         onboard = machine.Pin('LED', machine.Pin.OUT, value=0)

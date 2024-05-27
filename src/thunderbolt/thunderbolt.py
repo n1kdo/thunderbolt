@@ -63,6 +63,9 @@ BUFFER_SIZE = 256  # message 0x58 can be 170 bytes.
 GPS_EPOCH_AS_UNIX_TIME = 315964800
 WEEK_SECONDS = 7 * 86400
 
+DEGREES_RADIAN = 57.29578
+FEET_METER = 3.2808398950131
+
 
 class Thunderbolt:
     def __init__(self, port_name):
@@ -83,16 +86,13 @@ class Thunderbolt:
         self.altitude = -1
         self.satellites = []
         self.fix_dim = 0
-        self.unixtime = -1
-        self.last_unixtime = -1
+        self.time_of_week = 0
+        self.week_number = 0
+        self.utc_offset = 0
         self.tm = ''
         self.last_seen_tm = 0
 
     def get_status(self):
-        if self.unixtime > 0:
-            ts = self.get_datetime()
-        else:
-            ts = '?'
         return {
             'connected': self.connected,
             'receiver_mode': self.receiver_mode,
@@ -106,20 +106,28 @@ class Thunderbolt:
             'altitude': self.altitude,
             'satellites': self.satellites,
             'fix_dim': self.fix_dim,
-            'unixtime': f'{ts}',
+            'time_of_week': self.time_of_week,
+            'week_number': self.week_number,
+            'utc_offset': self.utc_offset,
+            'unixtime': self.get_datetime(),
             'time': self.tm,
         }
 
-    async def alarm_server(self):
+    async def alarm_server(self, status_led):
         while self.run:
             await asyncio.sleep(1.0)
-            if self.last_seen_tm > milliseconds() - 1000:
+            if self.last_seen_tm > milliseconds() - 5000:
                 self.connected = True
             else:
                 self.connected = False
+            if self.connected and self.minor_alarms == 0:
+                status_led.on()
+            else:
+                status_led.off()
 
     def get_datetime(self):
-        return get_timestamp_from_secs(self.unixtime)
+        unix_time = GPS_EPOCH_AS_UNIX_TIME + self.week_number * WEEK_SECONDS + self.time_of_week - self.utc_offset
+        return get_timestamp_from_secs(unix_time)
 
     async def serial_server(self):
         reader_state = RS_INIT
@@ -178,9 +186,8 @@ class Thunderbolt:
                 await asyncio.sleep(0.020)  # wait 20 ms for more traffic
 
     def process_buffer(self, buffer, offset):
-        # logging.loglevel = logging.WARNING  # TODO FIXME
         pkt_id = buffer[0]
-        # logging.debug(f'packet ID {pkt_id:02x}', 'Thunderbolt:process_buffer')
+        # logging.info(f'packet ID {pkt_id:02x}', 'Thunderbolt:process_buffer')
         if pkt_id in ignore_packets:
             return True
         try:
@@ -226,7 +233,9 @@ class Thunderbolt:
                 # 04 PDOP float
                 # 05-end PRN # char (list)
                 fix_dim = (bm & 0x07)
-                if fix_dim == 1:
+                if fix_dim == 0:
+                    self.fix_dim = 0  # no fix
+                elif fix_dim == 1:
                     self.fix_dim = 1  # 1d Clock fix
                 elif fix_dim == 3:
                     self.fix_dim = 2  # 2d fix
@@ -269,15 +278,11 @@ class Thunderbolt:
                     # print(f'size={struct.calcsize(fmt)}')
                     stuff = struct.unpack(fmt, buffer[:offset])
                     # print(stuff)
-                    time_of_week = stuff[0]
-                    week_number = stuff[1]
-                    utc_offset = stuff[2]
+                    self.time_of_week = stuff[0]
+                    self.week_number = stuff[1] + 1024  # week number has wrapped again.
+                    self.utc_offset = stuff[2]
                     # print(f'{stuff[3]}')
-                    # fix week number underflow
-                    while week_number < 2048:
-                        week_number += 1024
                     # calculate time as unix time
-                    self.unixtime = GPS_EPOCH_AS_UNIX_TIME + week_number * WEEK_SECONDS + time_of_week - utc_offset
                     self.tm = f'{stuff[6]:02d}:{stuff[5]:02d}:{stuff[4]:02d}'
                     # logging.debug(f'time: {self.tm}', 'thunderbolt:process_buffer:0x8f 0xab')
                     self.connected = True
@@ -317,46 +322,19 @@ class Thunderbolt:
                     self.critical_alarms = stuff[4]
                     self.minor_alarms = stuff[5]
                     self.gps_status = stuff[6]
-                    self.latitude = round(stuff[15] * 57.29578, 4)
-                    self.longitude = round(stuff[16] * 57.29578, 4)
-                    self.altitude = round(stuff[17] * 3.2808398950131, 1)  # meters to Feet
+                    self.latitude = stuff[15]
+                    self.longitude = stuff[16]
+                    self.altitude = stuff[17]
                 else:
                     logging.warning(f'unknown packet type 8f {pkt_sub_id:02x}', 'thunderbolt:process_buffer')
                     logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
                     return False
-            elif pkt_id == 0xbb:
-                # see Section A.9.39 in Thunderbolt book, page A-28
-                # this packet is not normally sent, but it is requested by Lady Heather.
-                pass
-                # logging.warning(f'Request or Set GPS Receiver Configuration, len={offset}', 'thunderbolt:process_buffer:0xbb')
-                # logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
-                # fmt = '>xBBBffffBBBBBBBBBBBBBBBBBBBBB'
-                # print(f'fmt = {fmt}')
-                # print(f'size={struct.calcsize(fmt)}, offset={offset}')
-                # stuff = struct.unpack(fmt, buffer[:offset])
-                # results include:
-                # 00 subcode
-                # 01 receiver mode
-                # 02 reserved
-                # 03 dynamics code
-                # 04 reserved
-                # 05 elevation mask
-                # 06 AMU mask
-                # 07 PDOP mask
-                # 08 PDOP switch
-                # 09 reserved
-                # 10 foliage mode
-                # 11 reserved
-                # print(stuff)
-                # don't care about this right now.
             else:
                 logging.warning(f'unknown packet type {pkt_id:02x}', 'thunderbolt:process_buffer')
                 logging.warning('buffer:\n' + hexdump_buffer(buffer[:offset]))
                 return False
-        except struct.error as exc:
-            logging.error(exc)
-            # exit(1)  # DIE HORRIBLY WHILE DEBUGGING.
-            return False
+        except Exception as exc:
+            logging.error(str(exc), 'thunderbolt:process_buffer:Exception')
         return True
 
 

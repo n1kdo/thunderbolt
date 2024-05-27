@@ -90,8 +90,9 @@ else:
     machine = Machine()
 
 onboard = machine.Pin('LED', machine.Pin.OUT, value=0)
-morse_led = machine.Pin(2, machine.Pin.OUT, value=0)  # status LED
-reset_button = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)
+morse_led = machine.Pin(2, machine.Pin.OUT, value=0)  # morse code LED GP2
+status_led = machine.Pin(6, machine.Pin.OUT, value=0)  # status LED GP6
+reset_button = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)  # GP3
 
 BUFFER_SIZE = 4096
 CONFIG_FILE = 'data/config.json'
@@ -303,6 +304,12 @@ async def main():
 
         morse_sender_task = asyncio.create_task(morse_code_sender.morse_sender())
 
+    if thunderbolt_port is not None:
+        thunderbolt = Thunderbolt(port_name=thunderbolt_port)
+        logging.info(f'Starting Thunderbolt serial port service', 'main:main')
+        thunderbolt_server = asyncio.create_task(thunderbolt.serial_server())
+        thunderbolt_alarms = asyncio.create_task(thunderbolt.alarm_server(status_led))
+
     if connected:
         http_server.add_uri_callback('/', slash_callback)
         http_server.add_uri_callback('/api/config', api_config_callback)
@@ -312,13 +319,7 @@ async def main():
         http_server.add_uri_callback('/api/rename_file', api_rename_file_callback)
         http_server.add_uri_callback('/api/restart', api_restart_callback)
 
-        if thunderbolt_port is not None:
-            thunderbolt = Thunderbolt(port_name=thunderbolt_port)
-            http_server.add_uri_callback('/api/status', api_status_callback)
-            # this task talks to the thunderbolt hardware.
-            logging.info(f'Starting Thunderbolt serial port service', 'main:main')
-            thunderbolt_alarms = asyncio.create_task(thunderbolt.alarm_server())
-            thunderbolt_server = asyncio.create_task(thunderbolt.serial_server())
+        http_server.add_uri_callback('/api/status', api_status_callback)
 
         logging.info(f'Starting web service on port {web_port}', 'main:main')
         web_server = asyncio.create_task(asyncio.start_server(http_server.serve_http_client, '0.0.0.0', web_port))
