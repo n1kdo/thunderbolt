@@ -3,7 +3,7 @@
 #
 __author__ = 'J. B. Otterson'
 __copyright__ = 'Copyright 2023, 2024 J. B. Otterson N1KDO.'
-__version__ = '0.9.1'
+__version__ = '0.9.2'
 
 #
 # Copyright 2024 J. B. Otterson N1KDO.
@@ -91,7 +91,8 @@ else:
 
 onboard = machine.Pin('LED', machine.Pin.OUT, value=0)
 morse_led = machine.Pin(2, machine.Pin.OUT, value=0)  # morse code LED GP2
-status_led = machine.Pin(6, machine.Pin.OUT, value=0)  # status LED GP6
+failed_led = machine.Pin(16, machine.Pin.OUT, value=0)  # comms failed LED GP16 pin 21
+status_led = machine.Pin(15, machine.Pin.OUT, value=0)  # status LED GP15 pin 20
 reset_button = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)  # GP3
 
 BUFFER_SIZE = 4096
@@ -308,7 +309,7 @@ async def main():
         thunderbolt = Thunderbolt(port_name=thunderbolt_port)
         logging.info(f'Starting Thunderbolt serial port service', 'main:main')
         thunderbolt_server = asyncio.create_task(thunderbolt.serial_server())
-        thunderbolt_alarms = asyncio.create_task(thunderbolt.alarm_server(status_led))
+        thunderbolt_alarms = asyncio.create_task(thunderbolt.alarm_server(status_led, failed_led))
 
     if connected:
         http_server.add_uri_callback('/', slash_callback)

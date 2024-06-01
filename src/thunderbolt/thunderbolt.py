@@ -20,7 +20,7 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-__version__ = '0.0.1'
+__version__ = '0.0.9'
 """
 This was written by listening to the serial output of a Trimble Thunderbolt,
 both when running standalone, and also when being "managed" by 
@@ -113,13 +113,15 @@ class Thunderbolt:
             'time': self.tm,
         }
 
-    async def alarm_server(self, status_led):
+    async def alarm_server(self, status_led, failed_led):
         while self.run:
             await asyncio.sleep(1.0)
             if self.last_seen_tm > milliseconds() - 5000:
                 self.connected = True
+                failed_led.off()
             else:
                 self.connected = False
+                failed_led.on()
             if self.connected and self.minor_alarms == 0:
                 status_led.on()
             else:
