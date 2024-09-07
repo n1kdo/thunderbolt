@@ -41,7 +41,7 @@ from http_server import (HttpServer,
 from thunderbolt import Thunderbolt
 from morse_code import MorseCode
 from utils import upython, safe_int
-from picow_network import connect_to_network
+from picow_network import PicowNetwork
 
 
 if upython:
@@ -105,10 +105,7 @@ DEFAULT_WEB_PORT = 80
 
 # globals...
 keep_running = True
-http_server = HttpServer(content_dir='content/')
 thunderbolt = None
-
-morse_code_sender = MorseCode(morse_led)
 
 
 def read_config():
@@ -297,12 +294,9 @@ async def main():
 
     connected = True
     if upython:
-        try:
-            ip_address = connect_to_network(config, DEFAULT_SSID, DEFAULT_SECRET, morse_code_sender)
-            connected = ip_address is not None
-        except Exception as ex:
-            logging.error(f'Network did not connect, {ex}', 'main:main')
-
+        picow_network = PicowNetwork(config, DEFAULT_SSID, DEFAULT_SECRET)
+        network_keepalive_task = asyncio.create_task(picow_network.keep_alive())
+        morse_code_sender = MorseCode(morse_led)
         morse_sender_task = asyncio.create_task(morse_code_sender.morse_sender())
 
     if thunderbolt_port is not None:
@@ -311,26 +305,28 @@ async def main():
         thunderbolt_server = asyncio.create_task(thunderbolt.serial_server())
         thunderbolt_alarms = asyncio.create_task(thunderbolt.alarm_server(status_led, failed_led))
 
-    if connected:
-        http_server.add_uri_callback('/', slash_callback)
-        http_server.add_uri_callback('/api/config', api_config_callback)
-        http_server.add_uri_callback('/api/get_files', api_get_files_callback)
-        http_server.add_uri_callback('/api/upload_file', api_upload_file_callback)
-        http_server.add_uri_callback('/api/remove_file', api_remove_file_callback)
-        http_server.add_uri_callback('/api/rename_file', api_rename_file_callback)
-        http_server.add_uri_callback('/api/restart', api_restart_callback)
+    http_server = HttpServer(content_dir='content/')
 
-        http_server.add_uri_callback('/api/status', api_status_callback)
+    http_server.add_uri_callback('/', slash_callback)
+    http_server.add_uri_callback('/api/config', api_config_callback)
+    http_server.add_uri_callback('/api/get_files', api_get_files_callback)
+    http_server.add_uri_callback('/api/upload_file', api_upload_file_callback)
+    http_server.add_uri_callback('/api/remove_file', api_remove_file_callback)
+    http_server.add_uri_callback('/api/rename_file', api_rename_file_callback)
+    http_server.add_uri_callback('/api/restart', api_restart_callback)
 
-        logging.info(f'Starting web service on port {web_port}', 'main:main')
-        web_server = asyncio.create_task(asyncio.start_server(http_server.serve_http_client, '0.0.0.0', web_port))
-    else:
-        logging.error('no network connection', 'main:main')
+    http_server.add_uri_callback('/api/status', api_status_callback)
+
+    logging.info(f'Starting web service on port {web_port}', 'main:main')
+    web_server = asyncio.create_task(asyncio.start_server(http_server.serve_http_client, '0.0.0.0', web_port))
 
     reset_button_pressed_count = 0
+    four_count = 0
+    last_message = ''
     while keep_running:
         if upython:
             await asyncio.sleep(0.25)
+            four_count += 1
             pressed = reset_button.value() == 0
             if pressed:
                 reset_button_pressed_count += 1
@@ -343,6 +339,11 @@ async def main():
                 config['ap_mode'] = ap_mode
                 save_config(config)
                 keep_running = False
+            if four_count >= 3:  # check for new message every one second
+                if picow_network.get_message() != last_message:
+                    last_message = picow_network.get_message()
+                    morse_code_sender.set_message(last_message)
+                four_count = 0
         else:
             await asyncio.sleep(10.0)
     if upython:
