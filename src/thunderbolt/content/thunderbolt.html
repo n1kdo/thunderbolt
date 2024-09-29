@@ -233,7 +233,7 @@
             time_header.innerHTML = "Alarm!";
             time_header.style.color = "red";
         } else {
-            time_header.innerHTML = thunderbolt_data["time"];
+            time_header.innerHTML = thunderbolt_data["unixtime"].substring(11, 19);
             time_header.style.color = "green";
         }
 
@@ -318,7 +318,7 @@
             <div class="item_name">Satellites:</div><div class="item_value" id="satellites_value"></div>
             <div class="item_name">Fix Dimension:</div><div class="item_value" id="fix_dim_value"></div>
             <div class="item_name">UnixTime:</div><div class="item_value" id="unixtime_value"></div>
-            <div class="item_name">Time:</div><div class="item_value" id="time_value"></div>
+            <div class="item_name">GPS Time:</div><div class="item_value" id="time_value"></div>
     </div>
 </div>
 <div class="row">
@@ -338,7 +338,7 @@
         <div class="bottom_links">
             <a href="setup.html">Setup</a>
         </div>
-        <div class="author"><a href="https://www.n1kdo.com" target="_blank">N1KDO</a> 20240523</div>
+        <div class="author"><a href="https://www.n1kdo.com" target="_blank">N1KDO</a> 20240929</div>
 </div>
 </body>
 </html>

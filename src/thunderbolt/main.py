@@ -295,9 +295,7 @@ async def main():
     connected = True
     if upython:
         picow_network = PicowNetwork(config, DEFAULT_SSID, DEFAULT_SECRET)
-        network_keepalive_task = asyncio.create_task(picow_network.keep_alive())
         morse_code_sender = MorseCode(morse_led)
-        morse_sender_task = asyncio.create_task(morse_code_sender.morse_sender())
 
     if thunderbolt_port is not None:
         thunderbolt = Thunderbolt(port_name=thunderbolt_port)

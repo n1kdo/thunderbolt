@@ -5,7 +5,7 @@
 
 __author__ = 'J. B. Otterson'
 __copyright__ = 'Copyright 2024, J. B. Otterson N1KDO.'
-__version__ = '0.9.2'
+__version__ = '0.9.3'
 
 #
 # Copyright 2024, J. B. Otterson N1KDO.
@@ -80,6 +80,8 @@ class PicowNetwork:
 
         self.message='INIT'
         self.wlan = None
+        asyncio.create_task(self.keep_alive())
+
 
     async def connect(self):
         network.country('US')
