@@ -47,9 +47,14 @@ ETX = 0x03  # end of message
 DLE = 0x10  # start of message
 
 # these are packets that I don't care about.  They are safe to ignore.
-ignore_packets = [0x43, 0x45, 0x47, 0x49, 0x55, 0x56, 0x57, 0x58, 0x59,
-                  0x5a, 0x5b, 0x5c, 0x5f, 0x70, 0x83, 0x84, 0xbb, ]
-ignore_8f_packets = [0x15, 0x41, 0x42, 0x4a, 0x4c, 0xa0, 0xa1, 0xa2, 0xa5, 0xa7, 0xa8, 0xa9 ]
+ignore_packets = [0x43, 0x45, 0x47, 0x49,
+                  0x55, 0x56, 0x57, 0x58,
+                  0x59, 0x5a, 0x5b, 0x5c,
+                  0x5f, 0x70, 0x83, 0x84,
+                  0xbb]
+ignore_8f_packets = [0x15, 0x41, 0x42, 0x4a,
+                     0x4c, 0xa0, 0xa1, 0xa2,
+                     0xa5, 0xa7, 0xa8, 0xa9]
 
 # state machine states
 RS_INIT = 0  # initial reader state, waiting for DLE
@@ -139,6 +144,11 @@ class Thunderbolt:
         offset = 0
         device_port = self.device_port
 
+        # send init (8E A5) message to enable the messages I want.
+        message = b'\x10\x8e\xa5\x00\x45\x00\x00\x10\x03'
+        device_port.write(message)
+        device_port.flush()
+
         while self.run:
             if device_port.any():
                 bs = device_port.read(1)
@@ -189,7 +199,7 @@ class Thunderbolt:
 
     def process_buffer(self, buffer, offset):
         pkt_id = buffer[0]
-        # logging.info(f'packet ID {pkt_id:02x}', 'Thunderbolt:process_buffer')
+        # logging.debug(f'packet ID {pkt_id:02x}', 'Thunderbolt:process_buffer')
         if pkt_id in ignore_packets:
             return True
         try:
@@ -220,6 +230,7 @@ class Thunderbolt:
                 # logging.debug(f'satellite selection list, len={offset}', 'thunderbolt:process_buffer:0x6d')
                 # print(hexdump_buffer(buffer[:offset]))
                 num_sats = offset - 18
+                # logging.debug(f'num_sats={num_sats}', 'thunderbolt:process_buffer:0x6d')
                 fmt = '>xBffff' + 'b' * num_sats
                 # print(f'fmt = {fmt}')
                 # print(f'size={struct.calcsize(fmt)}')
@@ -260,6 +271,8 @@ class Thunderbolt:
                 pkt_sub_id = buffer[1]
                 if pkt_sub_id in ignore_8f_packets:
                     return True
+                # logging.debug(f'packet ID 8f {pkt_sub_id:02x}', 'Thunderbolt:process_buffer')
+
                 if pkt_sub_id == 0xab:
                     # see Section A.10.30 in Thunderbolt Book, page A-56
                     # logging.debug(f'primary timing packet, len={offset}', 'thunderbolt:process_buffer:0x8f 0xab')
