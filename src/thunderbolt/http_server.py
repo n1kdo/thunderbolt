@@ -114,9 +114,12 @@ class HttpServer:
         try:
             with open(filename, 'rb', self.BUFFER_SIZE) as infile:
                 while True:
-                    buffer = infile.read(self.BUFFER_SIZE)
-                    writer.write(buffer)
-                    if len(buffer) < self.BUFFER_SIZE:
+                    bytes_read = infile.readinto(self.buffer)
+                    if bytes_read == self.BUFFER_SIZE:
+                        writer.write(self.buffer)
+                    else:
+                        writer.write(self.buffer[0:bytes_read])
+                    if bytes_read < self.BUFFER_SIZE:
                         break
         except Exception as exc:
             logging.error('{type(exc)} {exc}', 'http_server:serve_content')
@@ -226,24 +229,23 @@ class HttpServer:
                                             'http_server:serve_http_client')
                             logging.warning(f'request_content_length={request_content_length}',
                                             'http_server:serve_http_client')
-                # NOTE method must be GET or POST to get here.  there is no else case.
+                else:  # bad request
+                    http_status = 400
+                    response = b'only GET and POST are supported'
+                    logging.warning(response, 'http_server:serve_http_client')
+                    bytes_sent = self.send_simple_response(writer, http_status, self.CT_TEXT_TEXT, response)
 
-                callback = self.uri_map.get(target)
-                if callback is not None:
-                    bytes_sent, http_status = await callback(self, verb, args, reader, writer, request_headers)
-                else:
-                    content_file = target[1:] if target[0] == '/' else target
-                    bytes_sent, http_status = self.serve_content(writer, content_file)
+                if verb in ('GET', 'POST'):
+                    callback = self.uri_map.get(target)
+                    if callback is not None:
+                        bytes_sent, http_status = await callback(self, verb, args, reader, writer, request_headers)
+                    else:
+                        content_file = target[1:] if target[0] == '/' else target
+                        bytes_sent, http_status = self.serve_content(writer, content_file)
 
-        # logging.debug(f'waiting to drain {bytes_sent} bytes sent.')
         await writer.drain()
         writer.close()
-        try:
-            await writer.wait_closed()
-        except ConnectionAbortedError as exc:
-            print(type(exc), exc, f'request: "{request}"')
-        # logging.debug(f'closed connection for request {request}')
-
+        await writer.wait_closed()
         elapsed = milliseconds() - t0
         if http_status == 200:
             logging.info(f'{partner} {request} {http_status} {bytes_sent} {elapsed} ms',
