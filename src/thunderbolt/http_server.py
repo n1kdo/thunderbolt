@@ -4,7 +4,7 @@
 
 __author__ = 'J. B. Otterson'
 __copyright__ = """
-Copyright 2022, J. B. Otterson N1KDO.
+Copyright 2022, 2024, J. B. Otterson N1KDO.
 Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
   1. Redistributions of source code must retain the above copyright notice, 
@@ -23,7 +23,7 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-__version__ = '0.9.0'
+__version__ = '0.1.0'
 
 import gc
 import json
@@ -35,7 +35,16 @@ if upython:
     import micro_logging as logging
 else:
     import micro_logging as logging
-    # import logging
+    def const(i):
+        return i
+
+# these are the HTTP responses that will be sent.
+HTTP_STATUS_OK = const(200)
+HTTP_STATUS_CREATED = const(201)
+HTTP_STATUS_BAD_REQUEST = const(400)
+HTTP_STATUS_CONFLICT = const(409)
+HTTP_STATUS_NOT_FOUND = const(404)
+HTTP_STATUS_INTERNAL_SERVER_ERROR = const(500)
 
 
 class HttpServer:
@@ -59,30 +68,30 @@ class HttpServer:
     }
     HYPHENS = '--'
     HTTP_STATUS_TEXT = {
-        200: 'OK',
-        201: 'Created',
-        202: 'Accepted',
-        204: 'No Content',
-        301: 'Moved Permanently',
-        302: 'Moved Temporarily',
-        304: 'Not Modified',
-        400: 'Bad Request',
-        401: 'Unauthorized',
-        403: 'Forbidden',
-        404: 'Not Found',
-        409: 'Conflict',
-        500: 'Internal Server Error',
-        501: 'Not Implemented',
-        502: 'Bad Gateway',
-        503: 'Service Unavailable',
+        HTTP_STATUS_OK: 'OK',
+        HTTP_STATUS_CREATED: 'Created',
+        #202: 'Accepted',
+        #204: 'No Content',
+        #301: 'Moved Permanently',
+        #302: 'Moved Temporarily',
+        #304: 'Not Modified',
+        HTTP_STATUS_BAD_REQUEST: 'Bad Request',
+        #401: 'Unauthorized',
+        #403: 'Forbidden',
+        HTTP_STATUS_NOT_FOUND: 'Not Found',
+        HTTP_STATUS_CONFLICT: 'Conflict',
+        HTTP_STATUS_INTERNAL_SERVER_ERROR: 'Internal Server Error',
+        #501: 'Not Implemented',
+        #502: 'Bad Gateway',
+        #503: 'Service Unavailable',
     }
-    MP_START_BOUND = 1
-    MP_HEADERS = 2
-    MP_DATA = 3
-    MP_END_BOUND = 4
+    MP_START_BOUND = const(1)
+    MP_HEADERS = const(2)
+    MP_DATA = const(3)
+    MP_END_BOUND = const(4)
 
     DANGER_ZONE_FILE_NAMES = [
-        'config.html',
+        'setup.html',
         'files.html',
     ]
 
@@ -103,14 +112,14 @@ class HttpServer:
             content_length = -1
         if content_length < 0:
             response = b'<html><body><p>404 -- File not found.</p></body></html>'
-            http_status = 404
+            http_status = HTTP_STATUS_NOT_FOUND
             return self.send_simple_response(writer, http_status, self.CT_TEXT_HTML, response), http_status
         extension = filename.split('.')[-1]
         content_type = self.FILE_EXTENSION_TO_CONTENT_TYPE_MAP.get(extension)
         if content_type is None:
             content_type = self.FILE_EXTENSION_TO_CONTENT_TYPE_MAP.get('*')
-        http_status = 200
-        self.start_response(writer, 200, content_type, content_length)
+        http_status = HTTP_STATUS_OK
+        self.start_response(writer, HTTP_STATUS_OK, content_type, content_length)
         try:
             with open(filename, 'rb', self.BUFFER_SIZE) as infile:
                 while True:
@@ -125,7 +134,7 @@ class HttpServer:
             logging.error('{type(exc)} {exc}', 'http_server:serve_content')
         return content_length, http_status
 
-    def start_response(self, writer, http_status=200, content_type=None, response_size=0, extra_headers=None):
+    def start_response(self, writer, http_status=HTTP_STATUS_OK, content_type=None, response_size=0, extra_headers=None):
         status_text = self.HTTP_STATUS_TEXT.get(http_status) or 'Confused'
         protocol = 'HTTP/1.0'
         writer.write(f'{protocol} {http_status} {status_text}\r\n'.encode('utf-8'))
@@ -139,7 +148,7 @@ class HttpServer:
                 writer.write(f'{header}\r\n'.encode('utf-8'))
         writer.write(b'\r\n')
 
-    def send_simple_response(self, writer, http_status=200, content_type=None, response=None, extra_headers=None):
+    def send_simple_response(self, writer, http_status=HTTP_STATUS_OK, content_type=None, response=None, extra_headers=None):
         content_length = len(response) if response else 0
         self.start_response(writer, http_status, content_type, content_length, extra_headers)
         if response is not None and len(response) > 0:
@@ -159,16 +168,18 @@ class HttpServer:
 
     async def serve_http_client(self, reader, writer):
         t0 = milliseconds()
-        http_status = 418  # can only make tea, sorry.
+        http_status = HTTP_STATUS_INTERNAL_SERVER_ERROR
         bytes_sent = 0
         partner = writer.get_extra_info('peername')[0]
-        # logging.debug(f'web client connected from {partner}', 'http_server:serve_http_client')
+        if logging.should_log(logging.DEBUG):
+            logging.debug(f'web client connected from {partner}', 'http_server:serve_http_client')
         request_line = await reader.readline()
         request = request_line.decode().strip()
-        # logging.debug(f'request: "{request}"', 'http_server:serve_http_client')
+        if logging.should_log(logging.DEBUG):
+            logging.debug(f'request: {request}', 'http_server:serve_http_client')
         pieces = request.split(' ')
         if len(pieces) != 3:  # does the http request line look approximately correct?
-            http_status = 400
+            http_status = HTTP_STATUS_BAD_REQUEST
             response = b'Bad Request !=3'
             bytes_sent = self.send_simple_response(writer, http_status, self.CT_TEXT_HTML, response)
         else:
@@ -183,11 +194,11 @@ class HttpServer:
             else:
                 query_args = ''
             if verb not in ['GET', 'POST']:
-                http_status = 400
+                http_status = HTTP_STATUS_BAD_REQUEST
                 response = b'<html><body><p>only GET and POST are supported</p></body></html>'
                 bytes_sent = self.send_simple_response(writer, http_status, self.CT_TEXT_HTML, response)
             elif protocol not in ['HTTP/1.0', 'HTTP/1.1']:
-                http_status = 400
+                http_status = HTTP_STATUS_BAD_REQUEST
                 response = b'that protocol is not supported'
                 bytes_sent = self.send_simple_response(writer, http_status, self.CT_TEXT_HTML, response)
             else:
@@ -230,7 +241,7 @@ class HttpServer:
                             logging.warning(f'request_content_length={request_content_length}',
                                             'http_server:serve_http_client')
                 else:  # bad request
-                    http_status = 400
+                    http_status = HTTP_STATUS_BAD_REQUEST
                     response = b'only GET and POST are supported'
                     logging.warning(response, 'http_server:serve_http_client')
                     bytes_sent = self.send_simple_response(writer, http_status, self.CT_TEXT_TEXT, response)
@@ -247,7 +258,7 @@ class HttpServer:
         writer.close()
         await writer.wait_closed()
         elapsed = milliseconds() - t0
-        if http_status == 200:
+        if http_status == HTTP_STATUS_OK:
             logging.info(f'{partner} {request} {http_status} {bytes_sent} {elapsed} ms',
                          'http_server:serve_http_client')
         else:
@@ -286,10 +297,10 @@ async def api_get_files_callback(http, verb, args, reader, writer, request_heade
     if verb == 'GET':
         payload = os.listdir(http.content_dir)
         response = json.dumps(payload).encode('utf-8')
-        http_status = 200
+        http_status = HTTP_STATUS_OK
         bytes_sent = http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
     else:
-        http_status = 400
+        http_status = HTTP_STATUS_BAD_REQUEST
         response = b'only GET permitted'
         bytes_sent = http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
     return bytes_sent, http_status
@@ -308,10 +319,10 @@ async def api_upload_file_callback(http, verb, args, reader, writer, request_hea
                 boundary = boundary[9:]
         if request_content_type != http.CT_MULTIPART_FORM or boundary is None:
             response = b'multipart boundary or content type error'
-            http_status = 400
+            http_status = HTTP_STATUS_BAD_REQUEST
         else:
             response = b'unhandled problem'
-            http_status = 500
+            http_status = HTTP_STATUS_INTERNAL_SERVER_ERROR
             request_content_length = int(request_headers.get('Content-Length') or '0')
             remaining_content_length = request_content_length
             logging.info(f'upload content length {request_content_length}', 'main:api_upload_file_callback')
@@ -363,7 +374,7 @@ async def api_upload_file_callback(http, verb, args, reader, writer, request_hea
                             output_file.close()
                             output_file = None
                             response = f'Uploaded {filename} successfully'.encode('utf-8')
-                            http_status = 201
+                            http_status = HTTP_STATUS_CREATED
                         start = end + 2
                     else:  # must be reading headers or boundary
                         line = ''
@@ -387,7 +398,7 @@ async def api_upload_file_callback(http, verb, args, reader, writer, request_hea
                                     filename = fn[10:-1]
                                     if not valid_filename(filename):
                                         response = b'bad filename'
-                                        http_status = 500
+                                        http_status = HTTP_STATUS_INTERNAL_SERVER_ERROR
                                         more_bytes = False
                                         start = len(buffer)
                         elif state == http.MP_END_BOUND:
@@ -396,12 +407,12 @@ async def api_upload_file_callback(http, verb, args, reader, writer, request_hea
                             else:
                                 logging.error(f'expecting end boundary, got {line}', 'main:api_upload_file_callback')
                         else:
-                            http_status = 500
+                            http_status = HTTP_STATUS_INTERNAL_SERVER_ERROR
                             response = f'unmanaged state {state}'.encode('utf-8')
         bytes_sent = http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
     else:
         response = b'PUT only.'
-        http_status = 400
+        http_status = HTTP_STATUS_BAD_REQUEST
         bytes_sent = http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
     return bytes_sent, http_status
 
@@ -413,13 +424,13 @@ async def api_remove_file_callback(http, verb, args, reader, writer, request_hea
         filename = http.content_dir + filename
         try:
             os.remove(filename)
-            http_status = 200
+            http_status = HTTP_STATUS_OK
             response = f'removed {filename}'.encode('utf-8')
         except OSError as ose:
-            http_status = 409
+            http_status = HTTP_STATUS_CONFLICT
             response = str(ose).encode('utf-8')
     else:
-        http_status = 409
+        http_status = HTTP_STATUS_CONFLICT
         response = b'bad file name'
     bytes_sent = http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
     return bytes_sent, http_status
@@ -433,7 +444,7 @@ async def api_rename_file_callback(http, verb, args, reader, writer, request_hea
         filename = http.content_dir + filename
         newname = http.content_dir + newname
         if file_size(newname) >= 0:
-            http_status = 409
+            http_status = HTTP_STATUS_CONFLICT
             response = f'new file {newname} already exists'.encode('utf-8')
         else:
             try:
@@ -442,13 +453,13 @@ async def api_rename_file_callback(http, verb, args, reader, writer, request_hea
                 pass  # swallow exception.
             try:
                 os.rename(filename, newname)
-                http_status = 200
+                http_status = HTTP_STATUS_OK
                 response = f'renamed {filename} to {newname}'.encode('utf-8')
             except Exception as ose:
-                http_status = 409
+                http_status = HTTP_STATUS_CONFLICT
                 response = str(ose).encode('utf-8')
     else:
-        http_status = 409
+        http_status = HTTP_STATUS_CONFLICT
         response = b'bad file name'
     bytes_sent = http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
     return bytes_sent, http_status
