@@ -30,6 +30,7 @@ There is code to parse data out of most of the TSIP messages, every one that I s
 A lot of the data parsing is commented out in the interest of time and space.
 """
 
+import gc
 import struct
 
 from serialport import SerialPort
@@ -98,7 +99,7 @@ class Thunderbolt:
         self.last_seen_tm = 0
 
     def get_status(self):
-        return {
+        return {'thunderbolt_data': {
             'connected': self.connected,
             'receiver_mode': self.receiver_mode,
             'discipline_mode': self.discipline_mode,
@@ -116,6 +117,7 @@ class Thunderbolt:
             'utc_offset': self.utc_offset,
             'unixtime': self.get_datetime(),
             'time': self.tm,
+        }
         }
 
     async def alarm_server(self, status_led, failed_led):
@@ -350,6 +352,7 @@ class Thunderbolt:
                 return False
         except Exception as exc:
             logging.error(str(exc), 'thunderbolt:process_buffer:Exception')
+        gc.collect()
         return True
 
 

@@ -266,8 +266,7 @@ async def api_restart_callback(http, verb, args, reader, writer, request_headers
 # Thunderbolt specific APIs
 # noinspection PyUnusedLocal
 async def api_status_callback(http, verb, args, reader, writer, request_headers=None):
-    payload = {'thunderbolt_data': thunderbolt.get_status()}
-    response = json.dumps(payload).encode('utf-8')
+    response = json.dumps(thunderbolt.get_status()).encode('utf-8')
     http_status = 200
     bytes_sent = http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
     return bytes_sent, http_status
