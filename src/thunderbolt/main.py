@@ -2,11 +2,11 @@
 # main.py -- this is the Raspberry Pi Pico W Trimble Thunderbolt Network Server.
 #
 __author__ = 'J. B. Otterson'
-__copyright__ = 'Copyright 2023, 2024 J. B. Otterson N1KDO.'
-__version__ = '0.9.2'
+__copyright__ = 'Copyright 2023, 2024, 2025 J. B. Otterson N1KDO.'
+__version__ = '0.9.3'
 
 #
-# Copyright 2024 J. B. Otterson N1KDO.
+# Copyright 2024, 2025 J. B. Otterson N1KDO.
 #
 # Redistribution and use in source and binary forms, with or without modification,
 # are permitted provided that the following conditions are met:
@@ -37,7 +37,9 @@ from http_server import (HttpServer,
                          api_rename_file_callback,
                          api_remove_file_callback,
                          api_upload_file_callback,
-                         api_get_files_callback)
+                         api_get_files_callback,
+                         HTTP_VERB_GET,
+                         HTTP_VERB_POST)
 from thunderbolt import Thunderbolt
 from morse_code import MorseCode
 from utils import upython, safe_int
@@ -138,19 +140,18 @@ def save_config(config):
 # noinspection PyUnusedLocal
 async def slash_callback(http, verb, args, reader, writer, request_headers=None):  # callback for '/'
     http_status = 301
-    bytes_sent = http.send_simple_response(writer, http_status, None, None, ['Location: /thunderbolt.html'])
+    bytes_sent = await http.send_simple_response(writer, http_status, None, None, [b'Location: /thunderbolt.html'])
     return bytes_sent, http_status
 
 
 # noinspection PyUnusedLocal
 async def api_config_callback(http, verb, args, reader, writer, request_headers=None):  # callback for '/api/config'
-    if verb == 'GET':
+    if verb == HTTP_VERB_GET:
         payload = read_config()
         payload.pop('secret')  # do not return the secret
-        response = json.dumps(payload).encode('utf-8')
         http_status = 200
-        bytes_sent = http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
-    elif verb == 'POST':
+        bytes_sent = await http.send_simple_response(writer, http_status, http.CT_APP_JSON, payload)
+    elif verb == HTTP_VERB_POST:
         config = read_config()
         dirty = False
         errors = False
@@ -236,15 +237,15 @@ async def api_config_callback(http, verb, args, reader, writer, request_headers=
                 save_config(config)
             response = b'ok\r\n'
             http_status = 200
-            bytes_sent = http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
+            bytes_sent = await http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
         else:
             response = b'parameter out of range\r\n'
             http_status = 400
-            bytes_sent = http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
+            bytes_sent = await http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
     else:
-        response = b'GET or PUT only.'
+        response = b'GET or POST only.'
         http_status = 400
-        bytes_sent = http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
+        bytes_sent = await http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
     return bytes_sent, http_status
 
 
@@ -266,9 +267,9 @@ async def api_restart_callback(http, verb, args, reader, writer, request_headers
 # Thunderbolt specific APIs
 # noinspection PyUnusedLocal
 async def api_status_callback(http, verb, args, reader, writer, request_headers=None):
-    response = json.dumps(thunderbolt.get_status()).encode('utf-8')
+    response = thunderbolt.get_status()
     http_status = 200
-    bytes_sent = http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
+    bytes_sent = await http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
     return bytes_sent, http_status
 
 
@@ -304,15 +305,14 @@ async def main():
 
     http_server = HttpServer(content_dir='content/')
 
-    http_server.add_uri_callback('/', slash_callback)
-    http_server.add_uri_callback('/api/config', api_config_callback)
-    http_server.add_uri_callback('/api/get_files', api_get_files_callback)
-    http_server.add_uri_callback('/api/upload_file', api_upload_file_callback)
-    http_server.add_uri_callback('/api/remove_file', api_remove_file_callback)
-    http_server.add_uri_callback('/api/rename_file', api_rename_file_callback)
-    http_server.add_uri_callback('/api/restart', api_restart_callback)
-
-    http_server.add_uri_callback('/api/status', api_status_callback)
+    http_server.add_uri_callback(b'/', slash_callback)
+    http_server.add_uri_callback(b'/api/config', api_config_callback)
+    http_server.add_uri_callback(b'/api/get_files', api_get_files_callback)
+    http_server.add_uri_callback(b'/api/upload_file', api_upload_file_callback)
+    http_server.add_uri_callback(b'/api/remove_file', api_remove_file_callback)
+    http_server.add_uri_callback(b'/api/rename_file', api_rename_file_callback)
+    http_server.add_uri_callback(b'/api/restart', api_restart_callback)
+    http_server.add_uri_callback(b'/api/status', api_status_callback)
 
     logging.info(f'Starting web service on port {web_port}', 'main:main')
     web_server = asyncio.create_task(asyncio.start_server(http_server.serve_http_client, '0.0.0.0', web_port))
