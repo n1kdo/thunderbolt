@@ -1,0 +1,21 @@
+{
+  "source_directory" : "../thunderbolt/",
+  "files": [
+    "content/",
+    "data/",
+    "http_server.py",
+    "thunderbolt.py",
+    "main.py",
+    "micro_logging.py",
+    "utils.py",
+    "morse_code.py",
+    "picow_network.py",
+    "serialport.py",
+    "content/favicon.ico",
+    "content/files.html",
+    "content/thunderbolt.html",
+    "content/setup.html"],
+  "special_files": [
+    "data/config.json"
+  ]
+}
