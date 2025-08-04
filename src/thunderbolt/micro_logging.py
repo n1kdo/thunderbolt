@@ -1,10 +1,9 @@
 #
 # micro_logging.py -- minimalistic logging for micropython.
-# minimally compatible with python logging?
 #
 __author__ = 'J. B. Otterson'
 __copyright__ = """
-Copyright 2024, J. B. Otterson N1KDO.
+Copyright 2024, 2025 J. B. Otterson N1KDO.
 Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
   1. Redistributions of source code must retain the above copyright notice, 
@@ -23,7 +22,7 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-__version__ = '0.0.5'
+__version__ = '0.1.0'
 
 from utils import get_timestamp, upython
 
@@ -37,13 +36,31 @@ WARNING = const(3)
 ERROR = const(2)
 CRITICAL = const(1)
 NOTHING = const(0)
+LEVEL_NAMES = ('NOTHING', 'CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG')
 
 loglevel = ERROR
+
+
+def set_level(level):
+    info(f'setting log level to {level}', 'micro_logging:set_level')
+
+    global loglevel
+    if isinstance(level, str):
+        try:
+            level = LEVEL_NAMES.index(level)
+        except ValueError:
+            level = None
+
+    if isinstance(level, int):
+        if NOTHING <= level <= DEBUG:
+            loglevel = level
+
 
 # this is used to determine if logging.level() methods should be called,
 # purpose is to reduce heap pollution from building complex log messages.
 def should_log(level):
-    return level >= loglevel
+    return level <= loglevel
+
 
 def _log(level: str, message: str, caller=None):
     level = '[' + level + ']'
