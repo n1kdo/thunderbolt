@@ -286,6 +286,16 @@
                 }
             }
         }
+        xmlHttp.onerror = function () {
+            if (update_secs > 0) {
+                update_timeout = setTimeout(get_status, update_secs * 1000);
+            }
+        }
+        xmlHttp.ontimeout = function () {
+            if (update_secs > 0) {
+                update_timeout = setTimeout(get_status, update_secs * 1000);
+            }
+        }
         xmlHttp.open("GET", "/api/status", true);
         xmlHttp.timeout = 1000;
         xmlHttp.send();
@@ -356,7 +366,7 @@
         <div class="bottom_links">
             <a href="setup.html">Setup</a>
         </div>
-        <div class="author"><a href="https://www.n1kdo.com" target="_blank">N1KDO</a> 20250425</div>
+        <div class="author"><a href="https://www.n1kdo.com" target="_blank">N1KDO</a> 20250804</div>
 </div>
 </body>
 </html>
