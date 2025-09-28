@@ -134,9 +134,11 @@ class Thunderbolt:
             else:
                 status_led.off()
 
+    def get_unix_time(self):
+        return GPS_EPOCH_AS_UNIX_TIME + self.week_number * WEEK_SECONDS + self.time_of_week - self.utc_offset
+
     def get_datetime(self):
-        unix_time = GPS_EPOCH_AS_UNIX_TIME + self.week_number * WEEK_SECONDS + self.time_of_week - self.utc_offset
-        return get_timestamp_from_secs(unix_time)
+        return get_timestamp_from_secs(self.get_unix_time())
 
     async def serial_server(self):
         reader_state = RS_INIT
