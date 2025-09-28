@@ -3,7 +3,7 @@
 #
 __author__ = 'J. B. Otterson'
 __copyright__ = 'Copyright 2023, 2024, 2025 J. B. Otterson N1KDO.'
-__version__ = '0.9.3'
+__version__ = '0.9.4'
 
 #
 # Copyright 2024, 2025 J. B. Otterson N1KDO.
@@ -31,8 +31,11 @@ __version__ = '0.9.3'
 # disable pylint import error
 # pylint: disable=E0401
 
+import asyncio
 import json
 import time
+
+import micro_logging as logging
 
 from http_server import (HttpServer,
                          api_rename_file_callback,
@@ -49,12 +52,8 @@ from picow_network import PicowNetwork
 
 if upython:
     import machine
-    import micro_logging as logging
-    import uasyncio as asyncio
     _rtc = machine.RTC()
 else:
-    import asyncio
-    import micro_logging as logging
     _rtc = None
 
     class Machine:
@@ -268,7 +267,10 @@ async def api_restart_callback(http, verb, args, reader, writer, request_headers
 # Thunderbolt specific APIs
 # noinspection PyUnusedLocal
 async def api_status_callback(http, verb, args, reader, writer, request_headers=None):
-    response = thunderbolt.get_status()
+    if thunderbolt is not None:
+        response = thunderbolt.get_status()
+    else:
+        response = b'{"error": "no thunderbolt"}'
     http_status = 200
     bytes_sent = await http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
     return bytes_sent, http_status
@@ -298,6 +300,9 @@ async def main():
     if upython:
         picow_network = PicowNetwork(config, DEFAULT_SSID, DEFAULT_SECRET)
         morse_code_sender = MorseCode(morse_led)
+    else:
+        picow_network = None
+        morse_code_sender = None
 
     if thunderbolt_port is not None:
         thunderbolt = Thunderbolt(port_name=thunderbolt_port)
@@ -343,19 +348,18 @@ async def main():
                     last_message = picow_network.get_message()
                     morse_code_sender.set_message(last_message)
                 four_count = 0
-
+            # set the RP2 RTC to the current time... because... why not?
             if not time_set:
                 unix_time = thunderbolt.get_unix_time()
                 tt = time.gmtime(unix_time)
-                print(f'unixtime: {unix_time}, time.time() {time.time()}, tt:{tt}', 'main:main')
+                if logging.should_log(logging.DEBUG):
+                    logging.debug(f'unixtime: {unix_time}, time.time() {time.time()}, tt:{tt}', 'main:main')
                 try:
                     _rtc.datetime((tt[0], tt[1], tt[2], tt[6], tt[3], tt[4], tt[5], 0))
                 except OSError as e:
                     print(e)
-
                 if time.time() > 1700000000:
                     time_set = True
-
         else:
             await asyncio.sleep(10.0)
     if upython:
