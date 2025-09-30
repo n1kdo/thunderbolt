@@ -52,44 +52,13 @@ from picow_network import PicowNetwork
 
 if upython:
     import machine
-    _rtc = machine.RTC()
 else:
-    _rtc = None
+    from not_machine import machine
 
-    class Machine:
-        """
-        fake micropython stuff
-        """
+    def const(i):  # support micropython const() in cpython
+        return i
 
-        @staticmethod
-        def soft_reset():
-            logging.debug('Machine.soft_reset()', 'main:Machine.soft_reset()')
-
-        @staticmethod
-        def reset():
-            logging.debug('Machine.reset()', 'main:Machine.reset()')
-
-        class Pin:
-            OUT = 1
-            IN = 0
-            PULL_UP = 0
-
-            def __init__(self, name, options=0, value=0):
-                self.name = name
-                self.options = options
-                self.state = value
-
-            def on(self):
-                self.state = 1
-
-            def off(self):
-                self.state = 0
-
-            def value(self):
-                return self.state
-
-
-    machine = Machine()
+_rtc = machine.RTC()
 
 onboard = machine.Pin('LED', machine.Pin.OUT, value=0)
 morse_led = machine.Pin(2, machine.Pin.OUT, value=0)  # morse code LED GP2

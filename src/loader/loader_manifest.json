@@ -7,6 +7,7 @@
     "thunderbolt.py",
     "main.py",
     "micro_logging.py",
+    "not_machine.py",
     "utils.py",
     "morse_code.py",
     "picow_network.py",
