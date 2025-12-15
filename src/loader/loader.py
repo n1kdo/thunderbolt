@@ -20,7 +20,7 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-__version__ = '0.10.1'
+__version__ = '0.10.2'
 
 import argparse
 import hashlib
@@ -32,11 +32,28 @@ import sys
 from serial.tools.list_ports import comports
 from serial import SerialException
 from pyboard import Pyboard, PyboardError
-BAUD_RATE = 115200
+
+_BAUD_RATE = 115200
+_BUFFER_SIZE = 2048
+
+class BytesConcatenator:
+    """
+    this is used to collect data from pyboard functions that otherwise do not return data.
+    """
+    __slots__ = ('data',)
+
+    def __init__(self):
+        self.data = bytearray()
+
+    def write_bytes(self, b):
+        self.data.extend(b.replace(b"\x04", b""))
+
+    def __str__(self):
+        return self.data.decode('utf-8').replace('\r', '')
 
 
 def get_ports_list():
-    return sorted([x.device for x in comports()])
+    return sorted(x.device for x in comports())
 
 
 # noinspection PyUnusedLocal
@@ -50,7 +67,7 @@ def put_file(filename, target, source_directory='.', src_file_name=None):
     else:
         src_file_name = source_directory + src_file_name
 
-    if filename[-1:] == '/':  # does it end in a slash?
+    if filename.endswith('/'):  # does it end in a slash?
         filename = filename[:-1]
         try:
             print(f'creating target directory {filename}')
@@ -58,6 +75,7 @@ def put_file(filename, target, source_directory='.', src_file_name=None):
         except PyboardError as exc:
             if 'EEXIST' not in str(exc):
                 print(f'failed to create target directory {filename}')
+                return False
     else:
         try:
             os.stat(src_file_name)
@@ -66,33 +84,18 @@ def put_file(filename, target, source_directory='.', src_file_name=None):
             print()
         except OSError:
             print(f'cannot find source file {src_file_name}')
-
-
-class BytesConcatenator:
-    """
-    this is used to collect data from pyboard functions that otherwise do not return data.
-    """
-
-    def __init__(self):
-        self.data = bytearray()
-
-    def write_bytes(self, b):
-        b = b.replace(b"\x04", b"")
-        self.data.extend(b)
-
-    def __str__(self):
-        stuff = self.data.decode('utf-8').replace('\r', '')
-        return stuff
+            return False
+    return True
 
 
 def loader_ls(target, src='/'):
     files_found = []
     files_data = BytesConcatenator()
-    cmd = (
-        "import uos\nfor f in uos.ilistdir(%s):\n"
-        " print('{}{}'.format(f[0],'/'if f[1]&0x4000 else ''))"
-        % (("'%s'" % src) if src else "")
-    )
+    cmd = f"""import uos
+for f in uos.ilistdir('{src}'):
+    print('{{}}{{}}'.format(f[0], '/' if f[1] & 0x4000 else ''))
+"""
+    #print(cmd)
     target.exec_(cmd, data_consumer=files_data.write_bytes)
     files = str(files_data).split('\n')
     for phile in files:
@@ -107,27 +110,25 @@ def loader_ls(target, src='/'):
 
 def loader_sha1(target, file=''):
     hash_data = BytesConcatenator()
-    cmd = (
-        "import hashlib\n"
-        "hasher = hashlib.sha1()\n"
-        "with open('" + file + "', 'rb', encoding=None) as fp:\n"
-        "  while True:\n"
-        "    buffer = fp.read(2048)\n"
-        "    if buffer is None or len(buffer) == 0:\n"
-        "      break\n"
-        "    hasher.update(buffer)\n"
-        "print(bytes.hex(hasher.digest()))"
-    )
+    cmd = f"""import hashlib
+hasher = hashlib.sha1()
+with open('{file}', 'rb', encoding=None) as fp:
+  while True:
+    buffer = fp.read(2048)
+    if buffer is None or len(buffer) == 0:
+      break
+    hasher.update(buffer)
+print(bytes.hex(hasher.digest()))
+"""
     target.exec_(cmd, data_consumer=hash_data.write_bytes)
-    result = str(hash_data).strip()
-    return result
+    return str(hash_data).strip()
 
 
 def local_sha1(file):
     hasher = hashlib.sha1()
     with open(file, 'rb') as fp:
         while True:
-            buffer = fp.read(2048)
+            buffer = fp.read(_BUFFER_SIZE)
             if buffer is None or len(buffer) == 0:
                 break
             hasher.update(buffer)
@@ -146,7 +147,7 @@ def load_device(port, force, manifest_filename='loader_manifest.json'):
         sys.exit(1)
 
     try:
-        target = Pyboard(port, BAUD_RATE)
+        target = Pyboard(port, _BAUD_RATE)
     except PyboardError:
         print(f'cannot connect to device {port}')
         sys.exit(1)
