@@ -20,13 +20,14 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-__version__ = '0.10.2'
+__version__ = '0.10.3'
 
 import argparse
 import hashlib
 import json
 import os
 import sys
+import time
 
 # need pyserial to enumerate com ports.
 from serial.tools.list_ports import comports
@@ -35,6 +36,8 @@ from pyboard import Pyboard, PyboardError
 
 _BAUD_RATE = 115200
 _BUFFER_SIZE = 2048
+
+_WATCHDOG_PY = 'watchdog.py'
 
 class BytesConcatenator:
     """
@@ -108,6 +111,14 @@ for f in uos.ilistdir('{src}'):
     return files_found
 
 
+def loader_reset(target):
+    files_data = BytesConcatenator()
+    cmd = f"""import machine
+machine.reset()
+"""
+    target.exec_(cmd, data_consumer=files_data.write_bytes)
+
+
 def loader_sha1(target, file=''):
     hash_data = BytesConcatenator()
     cmd = f"""import hashlib
@@ -153,6 +164,32 @@ def load_device(port, force, manifest_filename='loader_manifest.json'):
         sys.exit(1)
 
     target.enter_raw_repl()
+    #
+    restart = False
+    if True:
+        existing_files = loader_ls(target)
+        if _WATCHDOG_PY in existing_files:
+            print(f'removing existing file {_WATCHDOG_PY}')
+            target.fs_rm(_WATCHDOG_PY)
+            restart = True
+
+    if restart:
+        try:
+            print('resetting target device...')
+            loader_reset(target)
+        except SerialException as e:
+            time.sleep(3)
+        else:
+            print('expected disconnect on reset, something is wrong?')
+
+        try:
+            print('reconnecting to target device...')
+            target = Pyboard(port, _BAUD_RATE)
+        except PyboardError:
+            print(f'cannot connect to device {port}')
+            sys.exit(1)
+
+        target.enter_raw_repl()
 
     # clean up files that do not belong here.
     existing_files = loader_ls(target)
