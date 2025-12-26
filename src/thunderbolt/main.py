@@ -3,7 +3,7 @@
 #
 __author__ = 'J. B. Otterson'
 __copyright__ = 'Copyright 2023, 2024, 2025 J. B. Otterson N1KDO.'
-__version__ = '0.9.5'
+__version__ = '0.9.6'  # 2025-12-26
 
 #
 # Copyright 2024, 2025 J. B. Otterson N1KDO.
@@ -38,12 +38,8 @@ import time
 import micro_logging as logging
 
 from http_server import (HttpServer,
-                         api_rename_file_callback,
-                         api_remove_file_callback,
-                         api_upload_file_callback,
-                         api_get_files_callback,
-                         HTTP_VERB_GET,
-                         HTTP_VERB_POST)
+                         HTTP_STATUS_OK, HTTP_STATUS_BAD_REQUEST, HTTP_STATUS_CONFLICT,
+                         HTTP_VERB_GET, HTTP_VERB_POST)
 from thunderbolt import Thunderbolt
 from morse_code import MorseCode
 from utils import upython, safe_int
@@ -74,6 +70,7 @@ reset_button = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)  # GP3
 
 BUFFER_SIZE = 4096
 CONFIG_FILE = 'data/config.json'
+CONTENT_DIR = 'content/'
 
 # noinspection SpellCheckingInspection
 DEFAULT_SECRET = 'thunderbolt'
@@ -83,6 +80,9 @@ DEFAULT_WEB_PORT = 80
 # globals...
 keep_running = True
 thunderbolt = None
+
+# http server
+http_server = HttpServer(content_dir=CONTENT_DIR)
 
 
 def read_config():
@@ -113,6 +113,7 @@ def save_config(config):
 
 
 # noinspection PyUnusedLocal
+@http_server.route(b'/')
 async def slash_callback(http, verb, args, reader, writer, request_headers=None):  # callback for '/'
     http_status = 301
     bytes_sent = await http.send_simple_response(writer, http_status, None, None, [b'Location: /thunderbolt.html'])
@@ -120,6 +121,7 @@ async def slash_callback(http, verb, args, reader, writer, request_headers=None)
 
 
 # noinspection PyUnusedLocal
+@http_server.route(b'/api/config')
 async def api_config_callback(http, verb, args, reader, writer, request_headers=None):  # callback for '/api/config'
     if verb == HTTP_VERB_GET:
         payload = read_config()
@@ -225,6 +227,7 @@ async def api_config_callback(http, verb, args, reader, writer, request_headers=
 
 
 # noinspection PyUnusedLocal
+@http_server.route(b'/api/restart')
 async def api_restart_callback(http, verb, args, reader, writer, request_headers=None):
     global keep_running
     if upython:
@@ -241,6 +244,7 @@ async def api_restart_callback(http, verb, args, reader, writer, request_headers
 
 # Thunderbolt specific APIs
 # noinspection PyUnusedLocal
+@http_server.route(b'/api/status')
 async def api_status_callback(http, verb, args, reader, writer, request_headers=None):
     if thunderbolt is not None:
         response = thunderbolt.get_status()
@@ -287,17 +291,6 @@ async def main():
         logging.info(f'Starting Thunderbolt serial port service', 'main:main')
         thunderbolt_server = asyncio.create_task(thunderbolt.serial_server())
         thunderbolt_alarms = asyncio.create_task(thunderbolt.alarm_server(status_led, failed_led))
-
-    http_server = HttpServer(content_dir='content/')
-
-    http_server.add_uri_callback(b'/', slash_callback)
-    http_server.add_uri_callback(b'/api/config', api_config_callback)
-    http_server.add_uri_callback(b'/api/get_files', api_get_files_callback)
-    http_server.add_uri_callback(b'/api/upload_file', api_upload_file_callback)
-    http_server.add_uri_callback(b'/api/remove_file', api_remove_file_callback)
-    http_server.add_uri_callback(b'/api/rename_file', api_rename_file_callback)
-    http_server.add_uri_callback(b'/api/restart', api_restart_callback)
-    http_server.add_uri_callback(b'/api/status', api_status_callback)
 
     logging.info(f'Starting web service on port {web_port}', 'main:main')
     web_server = asyncio.create_task(asyncio.start_server(http_server.serve_http_client, '0.0.0.0', web_port))
