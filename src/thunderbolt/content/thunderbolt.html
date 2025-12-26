@@ -165,14 +165,14 @@
         let time_value              = document.getElementById("time_value");
         let time_header             = document.getElementById("time");
 
-        connected_value.innerHTML = thunderbolt_data.connected ? "True" : "False";
+        connected_value.textContent = thunderbolt_data.connected ? "True" : "False";
         connected_value.className = thunderbolt_data.connected ? "item_value_green" : "item_value_red";
-        receiver_mode_value.innerHTML = receiver_modes[thunderbolt_data["receiver_mode"]];
+        receiver_mode_value.textContent = receiver_modes[thunderbolt_data["receiver_mode"]];
         receiver_mode_value.className = thunderbolt_data["receiver_mode"] === 7 ? "item_value_green" : "item_value_red";
-        discipline_mode_value.innerHTML = discipline_modes[thunderbolt_data["discipline_mode"]];
+        discipline_mode_value.textContent = discipline_modes[thunderbolt_data["discipline_mode"]];
         discipline_mode_value.className = thunderbolt_data["discipline_mode"] === 0 ? "item_value_green" : "item_value_red";
-        holdover_duration_value.innerHTML = thunderbolt_data['holdover_duration'] + ' sec.';
-        gps_status_value.innerHTML = gps_status_map.get(thunderbolt_data["gps_status"]);
+        holdover_duration_value.textContent = thunderbolt_data['holdover_duration'] + ' sec.';
+        gps_status_value.textContent = gps_status_map.get(thunderbolt_data["gps_status"]);
         gps_status_value.className = (thunderbolt_data["gps_status"] === 0) ?  "item_value_green" : "item_value_red";
         let minor_alarms = thunderbolt_data['minor_alarms'];
         let alarm_text = '';
@@ -219,26 +219,26 @@
         } else {
             alarm_text = alarms.join(",");
         }
-        minor_alarms_value.innerHTML = alarm_text;
+        minor_alarms_value.textContent = alarm_text;
         minor_alarms_value.className = thunderbolt_data["minor_alarms"] === 0 ? "item_value_green" : "item_value_red";
 
-        critical_alarms_value.innerHTML = thunderbolt_data['critical_alarms'];
+        critical_alarms_value.textContent = thunderbolt_data['critical_alarms'];
         critical_alarms_value.className = thunderbolt_data["critical_alarms"] === 0 ? "item_value_green" : "item_value_red";
 
-        latitude_value.innerHTML = (thunderbolt_data["latitude"] * DEGREES_RADIAN).toFixed(3).toString();
-        longitude_value.innerHTML = (thunderbolt_data["longitude"] * DEGREES_RADIAN).toFixed(3).toString();
-        altitude_value.innerHTML = (thunderbolt_data["altitude"] * FEET_METER).toFixed(1).toString();
-        satellites_value.innerHTML = thunderbolt_data["satellites"];
-        fix_dim_value.innerHTML = thunderbolt_data["fix_dim"];
-        unixtime_value.innerHTML = thunderbolt_data["unixtime"];
-        time_value.innerHTML = thunderbolt_data["time"];
+        latitude_value.textContent = (thunderbolt_data["latitude"] * DEGREES_RADIAN).toFixed(3).toString();
+        longitude_value.textContent = (thunderbolt_data["longitude"] * DEGREES_RADIAN).toFixed(3).toString();
+        altitude_value.textContent = (thunderbolt_data["altitude"] * FEET_METER).toFixed(1).toString();
+        satellites_value.textContent = thunderbolt_data["satellites"];
+        fix_dim_value.textContent = thunderbolt_data["fix_dim"];
+        unixtime_value.textContent = thunderbolt_data["unixtime"];
+        time_value.textContent = thunderbolt_data["time"];
 
         let alarmed = (thunderbolt_data.minor_alarms !== 0) || (thunderbolt_data.connected !== true);
         if (alarmed) {
-            time_header.innerHTML = "Alarm!";
+            time_header.textContent = "Alarm!";
             time_header.style.color = "red";
         } else {
-            time_header.innerHTML = thunderbolt_data["unixtime"].substring(11, 19);
+            time_header.textContent = thunderbolt_data["unixtime"].substring(11, 19);
             time_header.style.color = "green";
         }
 
@@ -266,7 +266,7 @@
                 } else {
                     console.log("xmlHttp.status=" + xmlHttp.status);
                     let time_header = document.getElementById("time");
-                    time_header.innerHTML = "offline";
+                    time_header.textContent = "offline";
                     time_header.style.color = "red";
                     document.getElementById("auto_refresh").style.background = "red";
                     reset_refresh();
