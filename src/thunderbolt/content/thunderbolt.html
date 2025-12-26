@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/html" lang="en">
+<html lang="en">
 <!-- Copyright 2024, J. B. Otterson N1KDO. -->
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=0.75, minimum-scale=0.6, maximum-scale=1.5">
@@ -82,13 +82,13 @@
     }
     .time {
         border: 1px solid black;
-        border-radius: 10px;
+        border-radius: 6px;
         text-align: center;
         font-family: monospace;
         font-weight: bold;
         font-size: 32pt;
-        width: 200px;
-        margin-left: 150px;
+        width: 5em;
+        margin: auto;
     }
     .two_columns {
         display: grid;
@@ -103,7 +103,7 @@
 
     let update_secs = 60;
     let update_timeout = 0;
-    let thunderbolt_data = [];
+    let thunderbolt_data = {};
     const receiver_modes = ["Automatic (2D/3D)",
         "Single Satellite (Time)",
         "2 is not used",
@@ -130,23 +130,10 @@
     [0x10, "TRAIM rejected the fix"]]);
 
     function page_load() {
-        // look to see if update time is set in url search string
-        let search = window.location.search;
-        if (search !== "") {
-            search = search.substring(1);
-            let pairs = search.split("&");
-            let parts = search.split("=");
-            for (const pair of pairs) {
-                let parts = pair.split("=");
-                if (parts[0] === "update") {
-                    let i = parseInt(parts[1]);
-                    if (!isNaN(i)) {
-                        if ([0,1,5,60].includes(i)) { // only 0, 1, 5, 60 supported for this page.
-                            update_secs = i;
-                        }
-                    }
-                }
-            }
+        const params = new URLSearchParams(window.location.search);
+        const i = Number(params.get("update"));
+        if ([0, 1, 5, 60].includes(i)) {
+            update_secs = i;
         }
         get_status();
     }
@@ -324,9 +311,11 @@
         document.getElementById("auto_refresh").style.background = "inherit";
     }
 
+    window.addEventListener("load", page_load);
+
 </script>
 
-<body onload="page_load()">
+<body>
 <div class="header">Thunderbolt Monitor</div>
 <div class="time" id="time"></div>
 <div class="two_columns">
@@ -366,7 +355,7 @@
         <div class="bottom_links">
             <a href="setup.html">Setup</a>
         </div>
-        <div class="author"><a href="https://www.n1kdo.com" target="_blank">N1KDO</a> 20250804</div>
+        <div class="author"><a href="https://www.n1kdo.com" target="_blank">N1KDO</a> 20251226</div>
 </div>
 </body>
 </html>
