@@ -1,10 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
-<!-- Copyright 2024, J. B. Otterson N1KDO. -->
+<!-- Copyright 2024, 2025, J. B. Otterson N1KDO. -->
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=0.75, minimum-scale=0.6, maximum-scale=1.5">
-    <!--<link rel="shortcut icon" href="favicon.png" type="image/png">-->
-
     <title>Thunderbolt IOT Access</title>
 </head>
 <style>
@@ -17,6 +15,7 @@
         height: 350px;
         width: 500px;
     }
+
     .author {
         font-size: 8pt;
         font-weight: bold;
@@ -26,10 +25,12 @@
         left: 400px;
         width: 100px;
     }
+
     .author a:link, .author a:visited, .author a:hover {
         color: black;
         text-decoration: none;
     }
+
     .bottom_links {
         font-size: 8pt;
         font-weight: bold;
@@ -39,47 +40,57 @@
         top: 340px;
         width: 120px;
     }
+
     .bottom_links a:link, .bottom_links a:visited, .bottom_links a:hover {
         color: blue;
         text-decoration: none;
         padding-right: 4px;
     }
+
     .data_table {
         font-size: 8.5pt;
         display: grid;
         grid-template-columns: 50% 50%;
         margin: 10px 0 0 0;
     }
+
     .header {
         text-align: center;
         font-size: 24pt;
         font-weight: bold;
         border-bottom: 24px;
     }
+
     .item_name {
         text-align: right;
         font-weight: bold;
     }
+
     .item_value {
         padding-left: 0.5em;
     }
+
     .item_value_green {
-        color: #009900;
+        color: #090;
         padding-left: 0.5em;
     }
+
     .item_value_red {
-        color: #ff0000;
+        color: #f00;
         padding-left: 0.5em;
     }
+
     div.refresh_radio {
         border: 1px solid black;
         margin: 10px 150px 0 150px;
         text-align: left;
     }
+
     .refresh_radio_label {
         font-weight: bold;
         text-align: center;
     }
+
     .time {
         border: 1px solid black;
         border-radius: 6px;
@@ -90,6 +101,7 @@
         width: 5em;
         margin: auto;
     }
+
     .two_columns {
         display: grid;
         grid-template-columns: 50% 50%;
@@ -104,7 +116,8 @@
     let update_secs = 60;
     let update_timeout = 0;
     let thunderbolt_data = {};
-    const receiver_modes = ["Automatic (2D/3D)",
+    const receiver_modes = [
+        "Automatic (2D/3D)",
         "Single Satellite (Time)",
         "2 is not used",
         "Horizontal (2D)",
@@ -112,24 +125,53 @@
         "DGPS Reference",
         "Clock Hold (2D)",
         "Overdetermined Clock"];
-    const discipline_modes = ["Normal",
+    const discipline_modes = [
+        "Normal",
         "Power-Up",
         "Auto Holdover",
         "Manual Holdover",
         "Recovery",
         "Not Used",
         "Disciplining disabled"];
-    const gps_status_map = new Map([[0, "Doing fixes"],
-    [1, "Don’t have GPS time"],
-    [3, "PDOP is too high"],
-    [8, "No usable sats"],
-    [9,"Only 1 usable sat"],
-    [0x0a, "Only 2 usable sats"],
-    [0x0b, "Only 3 usable sats"],
-    [0x0c, "The chosen sat is unusable"],
-    [0x10, "TRAIM rejected the fix"]]);
+    const gps_status_map = new Map([
+        [0, "Doing fixes"],
+        [1, "Don’t have GPS time"],
+        [3, "PDOP is too high"],
+        [8, "No usable sats"],
+        [9, "Only 1 usable sat"],
+        [0x0a, "Only 2 usable sats"],
+        [0x0b, "Only 3 usable sats"],
+        [0x0c, "The chosen sat is unusable"],
+        [0x10, "TRAIM rejected the fix"]]);
+    const el = {};
+
+    function cache_dom() {
+        [
+            "altitude_value",
+            "auto_refresh",
+            "connected_value",
+            "critical_alarms_value",
+            "discipline_mode_value",
+            "fix_dim_value",
+            "gps_status_value",
+            "holdover_duration_value",
+            "latitude_value",
+            "longitude_value",
+            "minor_alarms_value",
+            "receiver_mode_value",
+            "refresh_radio_0",
+            "refresh_radio_1",
+            "refresh_radio_5",
+            "refresh_radio_60",
+            "satellites_value",
+            "time_value",
+            "time",
+            "unixtime_value"
+        ].forEach(id => el[id] = document.getElementById(id));
+    }
 
     function page_load() {
+        cache_dom();
         const params = new URLSearchParams(window.location.search);
         const i = Number(params.get("update"));
         if ([0, 1, 5, 60].includes(i)) {
@@ -143,37 +185,21 @@
         try {
             status_data = JSON.parse(message);
         } catch (error) {
-            console.error(error);
+            console.error("Error parsing status data", error);
             console.error(message);
-            reset_refresh();
+            update_secs = 0;
             return;
         }
         thunderbolt_data = status_data["thunderbolt_data"];
-        let connected_value         = document.getElementById("connected_value");
-        let receiver_mode_value     = document.getElementById("receiver_mode_value");
-        let discipline_mode_value   = document.getElementById("discipline_mode_value");
-        let holdover_duration_value = document.getElementById("holdover_duration_value");
-        let gps_status_value        = document.getElementById("gps_status_value");
-        let minor_alarms_value      = document.getElementById("minor_alarms_value");
-        let critical_alarms_value   = document.getElementById("critical_alarms_value");
-        let latitude_value          = document.getElementById("latitude_value");
-        let longitude_value         = document.getElementById("longitude_value");
-        let altitude_value          = document.getElementById("altitude_value");
-        let satellites_value        = document.getElementById("satellites_value");
-        let fix_dim_value           = document.getElementById("fix_dim_value");
-        let unixtime_value          = document.getElementById("unixtime_value");
-        let time_value              = document.getElementById("time_value");
-        let time_header             = document.getElementById("time");
-
-        connected_value.textContent = thunderbolt_data.connected ? "True" : "False";
-        connected_value.className = thunderbolt_data.connected ? "item_value_green" : "item_value_red";
-        receiver_mode_value.textContent = receiver_modes[thunderbolt_data["receiver_mode"]];
-        receiver_mode_value.className = thunderbolt_data["receiver_mode"] === 7 ? "item_value_green" : "item_value_red";
-        discipline_mode_value.textContent = discipline_modes[thunderbolt_data["discipline_mode"]];
-        discipline_mode_value.className = thunderbolt_data["discipline_mode"] === 0 ? "item_value_green" : "item_value_red";
-        holdover_duration_value.textContent = thunderbolt_data['holdover_duration'] + ' sec.';
-        gps_status_value.textContent = gps_status_map.get(thunderbolt_data["gps_status"]);
-        gps_status_value.className = (thunderbolt_data["gps_status"] === 0) ?  "item_value_green" : "item_value_red";
+        el.connected_value.textContent = thunderbolt_data.connected ? "True" : "False";
+        el.connected_value.className = thunderbolt_data.connected ? "item_value_green" : "item_value_red";
+        el.receiver_mode_value.textContent = receiver_modes[thunderbolt_data["receiver_mode"]] ?? "Unknown";
+        el.receiver_mode_value.className = thunderbolt_data["receiver_mode"] === 7 ? "item_value_green" : "item_value_red";
+        el.discipline_mode_value.textContent = discipline_modes[thunderbolt_data["discipline_mode"]] ?? "Unknown";
+        el.discipline_mode_value.className = thunderbolt_data["discipline_mode"] === 0 ? "item_value_green" : "item_value_red";
+        el.holdover_duration_value.textContent = thunderbolt_data['holdover_duration'] + ' sec.';
+        el.gps_status_value.textContent = gps_status_map.get(thunderbolt_data["gps_status"]) ?? "Unknown";
+        el.gps_status_value.className = (thunderbolt_data["gps_status"] === 0) ? "item_value_green" : "item_value_red";
         let minor_alarms = thunderbolt_data['minor_alarms'];
         let alarm_text = '';
         let alarms = [];
@@ -219,37 +245,40 @@
         } else {
             alarm_text = alarms.join(",");
         }
-        minor_alarms_value.textContent = alarm_text;
-        minor_alarms_value.className = thunderbolt_data["minor_alarms"] === 0 ? "item_value_green" : "item_value_red";
+        el.minor_alarms_value.textContent = alarm_text;
+        el.minor_alarms_value.className = thunderbolt_data["minor_alarms"] === 0 ? "item_value_green" : "item_value_red";
 
-        critical_alarms_value.textContent = thunderbolt_data['critical_alarms'];
-        critical_alarms_value.className = thunderbolt_data["critical_alarms"] === 0 ? "item_value_green" : "item_value_red";
+        el.critical_alarms_value.textContent = thunderbolt_data['critical_alarms'];
+        el.critical_alarms_value.className = thunderbolt_data["critical_alarms"] === 0 ? "item_value_green" : "item_value_red";
 
-        latitude_value.textContent = (thunderbolt_data["latitude"] * DEGREES_RADIAN).toFixed(3).toString();
-        longitude_value.textContent = (thunderbolt_data["longitude"] * DEGREES_RADIAN).toFixed(3).toString();
-        altitude_value.textContent = (thunderbolt_data["altitude"] * FEET_METER).toFixed(1).toString();
-        satellites_value.textContent = thunderbolt_data["satellites"];
-        fix_dim_value.textContent = thunderbolt_data["fix_dim"];
-        unixtime_value.textContent = thunderbolt_data["unixtime"];
-        time_value.textContent = thunderbolt_data["time"];
+        el.latitude_value.textContent = (thunderbolt_data["latitude"] * DEGREES_RADIAN).toFixed(3).toString();
+        el.longitude_value.textContent = (thunderbolt_data["longitude"] * DEGREES_RADIAN).toFixed(3).toString();
+        el.altitude_value.textContent = (thunderbolt_data["altitude"] * FEET_METER).toFixed(1).toString();
+        el.satellites_value.textContent = thunderbolt_data["satellites"];
+        el.fix_dim_value.textContent = thunderbolt_data["fix_dim"];
+        el.unixtime_value.textContent = thunderbolt_data["unixtime"];
+        el.time_value.textContent = thunderbolt_data["time"];
 
         let alarmed = (thunderbolt_data.minor_alarms !== 0) || (thunderbolt_data.connected !== true);
         if (alarmed) {
-            time_header.textContent = "Alarm!";
-            time_header.style.color = "red";
+            el.time.textContent = "Alarm!";
+            el.time.style.color = "red";
         } else {
-            time_header.textContent = thunderbolt_data["unixtime"].substring(11, 19);
-            time_header.style.color = "green";
+            const ut = thunderbolt_data.unixtime;
+            el.time.textContent =
+                (typeof ut === "string" && ut.length >= 19)
+                    ? ut.slice(11, 19) : "bad time";
+            el.time.style.color = "green";
         }
 
         let button_secs = update_secs;
         reset_refresh();
 
         // set the radio buttons for automatic updating
-        document.getElementById('refresh_radio_0').checked = (button_secs === 0);
-        document.getElementById('refresh_radio_1').checked = (button_secs === 1);
-        document.getElementById('refresh_radio_5').checked = (button_secs === 5);
-        document.getElementById('refresh_radio_60').checked = (button_secs === 60);
+        el.refresh_radio_0.checked = (button_secs === 0);
+        el.refresh_radio_1.checked = (button_secs === 1);
+        el.refresh_radio_5.checked = (button_secs === 5);
+        el.refresh_radio_60.checked = (button_secs === 60);
     }
 
     function get_status() {
@@ -261,14 +290,13 @@
         xmlHttp.onreadystatechange = function () {
             if (xmlHttp.readyState === 4) {
                 if (xmlHttp.status === 200) {
-                    document.getElementById("auto_refresh").style.background = "inherit";
+                    el.auto_refresh.style.background = "inherit";
                     process_get_status_response(xmlHttp.responseText);
                 } else {
                     console.log("xmlHttp.status=" + xmlHttp.status);
-                    let time_header = document.getElementById("time");
-                    time_header.textContent = "offline";
-                    time_header.style.color = "red";
-                    document.getElementById("auto_refresh").style.background = "red";
+                    el.time.textContent = "offline";
+                    el.time.style.color = "red";
+                    el.auto_refresh.style.background = "red";
                     reset_refresh();
                 }
             }
@@ -296,8 +324,8 @@
         if (update_secs > 0) {
             update_timeout = setTimeout(get_status, update_secs * 1000);
         }
-
     }
+
     function set_refresh(secs) {
         update_secs = secs
         if (update_secs === 0) {
@@ -308,11 +336,10 @@
         } else {
             get_status();
         }
-        document.getElementById("auto_refresh").style.background = "inherit";
+        el.auto_refresh.style.background = "inherit";
     }
 
     window.addEventListener("load", page_load);
-
 </script>
 
 <body>
@@ -320,42 +347,56 @@
 <div class="time" id="time"></div>
 <div class="two_columns">
     <div class="data_table">
-            <div class="item_name">Connected:</div><div class="item_value" id="connected_value"></div>
-            <div class="item_name">Receiver Mode:</div><div class="item_value" id="receiver_mode_value"></div>
-            <div class="item_name">Discipline Mode:</div><div class="item_value" id="discipline_mode_value"></div>
-            <div class="item_name">Holdover Duration:</div><div class="item_value" id="holdover_duration_value"></div>
-            <div class="item_name">GPS Status:</div><div class="item_value" id="gps_status_value"></div>
-            <div class="item_name">Minor Alarms:</div><div class="item_value" id="minor_alarms_value"></div>
-            <div class="item_name">Critical Alarms:</div><div class="item_value" id="critical_alarms_value"></div>
-        </div>
-        <div class="data_table">
-            <div class="item_name">Latitude:</div><div class="item_value" id="latitude_value"></div>
-            <div class="item_name">Longitude:</div><div class="item_value" id="longitude_value"></div>
-            <div class="item_name">Altitude:</div><div class="item_value" id="altitude_value"></div>
-            <div class="item_name">Satellites:</div><div class="item_value" id="satellites_value"></div>
-            <div class="item_name">Fix Dimension:</div><div class="item_value" id="fix_dim_value"></div>
-            <div class="item_name">UnixTime:</div><div class="item_value" id="unixtime_value"></div>
-            <div class="item_name">GPS Time:</div><div class="item_value" id="time_value"></div>
+        <div class="item_name">Connected:</div>
+        <div class="item_value" id="connected_value"></div>
+        <div class="item_name">Receiver Mode:</div>
+        <div class="item_value" id="receiver_mode_value"></div>
+        <div class="item_name">Discipline Mode:</div>
+        <div class="item_value" id="discipline_mode_value"></div>
+        <div class="item_name">Holdover Duration:</div>
+        <div class="item_value" id="holdover_duration_value"></div>
+        <div class="item_name">GPS Status:</div>
+        <div class="item_value" id="gps_status_value"></div>
+        <div class="item_name">Minor Alarms:</div>
+        <div class="item_value" id="minor_alarms_value"></div>
+        <div class="item_name">Critical Alarms:</div>
+        <div class="item_value" id="critical_alarms_value"></div>
+    </div>
+    <div class="data_table">
+        <div class="item_name">Latitude:</div>
+        <div class="item_value" id="latitude_value"></div>
+        <div class="item_name">Longitude:</div>
+        <div class="item_value" id="longitude_value"></div>
+        <div class="item_name">Altitude:</div>
+        <div class="item_value" id="altitude_value"></div>
+        <div class="item_name">Satellites:</div>
+        <div class="item_value" id="satellites_value"></div>
+        <div class="item_name">Fix Dimension:</div>
+        <div class="item_value" id="fix_dim_value"></div>
+        <div class="item_name">UnixTime:</div>
+        <div class="item_value" id="unixtime_value"></div>
+        <div class="item_name">GPS Time:</div>
+        <div class="item_value" id="time_value"></div>
     </div>
 </div>
 <div class="row">
-        <div class="refresh_radio">
-            <div class="refresh_radio_label" id="auto_refresh">Auto-Refresh</div>
-            <input type="radio" name="refresh_radio" id="refresh_radio_0" value="0" onclick="set_refresh(0)"/>
-            <label for="refresh_radio_0">Never</label><br>
-            <input type="radio" name="refresh_radio" id="refresh_radio_1" value="1" onclick="set_refresh(1)"/>
-            <label for="refresh_radio_1">1 second</label><br>
-            <input type="radio" name="refresh_radio" id="refresh_radio_5" value="5" onclick="set_refresh(5)"/>
-            <label for="refresh_radio_5">5 seconds</label><br>
-            <input type="radio" name="refresh_radio" id="refresh_radio_60" value="60" onclick="set_refresh(60)"/>
-            <label for="refresh_radio_60">60 seconds</label><br>
-        </div>
+    <div class="refresh_radio">
+        <div class="refresh_radio_label" id="auto_refresh">Auto-Refresh</div>
+        <input type="radio" name="refresh_radio" id="refresh_radio_0" value="0" onclick="set_refresh(0)"/>
+        <label for="refresh_radio_0">Never</label><br>
+        <input type="radio" name="refresh_radio" id="refresh_radio_1" value="1" onclick="set_refresh(1)"/>
+        <label for="refresh_radio_1">1 second</label><br>
+        <input type="radio" name="refresh_radio" id="refresh_radio_5" value="5" onclick="set_refresh(5)"/>
+        <label for="refresh_radio_5">5 seconds</label><br>
+        <input type="radio" name="refresh_radio" id="refresh_radio_60" value="60" onclick="set_refresh(60)"/>
+        <label for="refresh_radio_60">60 seconds</label><br>
     </div>
+</div>
 <div class="row">
-        <div class="bottom_links">
-            <a href="setup.html">Setup</a>
-        </div>
-        <div class="author"><a href="https://www.n1kdo.com" target="_blank">N1KDO</a> 20251226</div>
+    <div class="bottom_links">
+        <a href="setup.html">Setup</a>
+    </div>
+    <div class="author"><a href="https://www.n1kdo.com" target="_blank">N1KDO</a> 20251227</div>
 </div>
 </body>
 </html>
