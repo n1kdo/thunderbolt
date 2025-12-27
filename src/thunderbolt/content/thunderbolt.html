@@ -4,343 +4,336 @@
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=0.75, minimum-scale=0.6, maximum-scale=1.5">
     <title>Thunderbolt IOT Access</title>
-</head>
-<style>
-    body {
-        background-color: #ddd;
-        border-style: double;
-        font-family: sans-serif;
-        font-size: 10pt;
-        margin: 0;
-        height: 350px;
-        width: 500px;
-    }
-
-    .author {
-        font-size: 8pt;
-        font-weight: bold;
-        text-align: right;
-        position: absolute;
-        top: 340px;
-        left: 400px;
-        width: 100px;
-    }
-
-    .author a:link, .author a:visited, .author a:hover {
-        color: black;
-        text-decoration: none;
-    }
-
-    .bottom_links {
-        font-size: 8pt;
-        font-weight: bold;
-        color: black;
-        text-align: left;
-        position: absolute;
-        top: 340px;
-        width: 120px;
-    }
-
-    .bottom_links a:link, .bottom_links a:visited, .bottom_links a:hover {
-        color: blue;
-        text-decoration: none;
-        padding-right: 4px;
-    }
-
-    .data_table {
-        font-size: 8.5pt;
-        display: grid;
-        grid-template-columns: 50% 50%;
-        margin: 10px 0 0 0;
-    }
-
-    .header {
-        text-align: center;
-        font-size: 24pt;
-        font-weight: bold;
-        border-bottom: 24px;
-    }
-
-    .item_name {
-        text-align: right;
-        font-weight: bold;
-    }
-
-    .item_value {
-        padding-left: 0.5em;
-    }
-
-    .item_value_green {
-        color: #090;
-        padding-left: 0.5em;
-    }
-
-    .item_value_red {
-        color: #f00;
-        padding-left: 0.5em;
-    }
-
-    div.refresh_radio {
-        border: 1px solid black;
-        margin: 10px 150px 0 150px;
-        text-align: left;
-    }
-
-    .refresh_radio_label {
-        font-weight: bold;
-        text-align: center;
-    }
-
-    .time {
-        border: 1px solid black;
-        border-radius: 6px;
-        text-align: center;
-        font-family: monospace;
-        font-weight: bold;
-        font-size: 32pt;
-        width: 5em;
-        margin: auto;
-    }
-
-    .two_columns {
-        display: grid;
-        grid-template-columns: 50% 50%;
-    }
-
-</style>
-<!--suppress JSUnusedLocalSymbols -->
-<script>
-    const DEGREES_RADIAN = 57.29578;
-    const FEET_METER = 3.28084;
-
-    let update_secs = 60;
-    let update_timeout = 0;
-    let thunderbolt_data = {};
-    const receiver_modes = [
-        "Automatic (2D/3D)",
-        "Single Satellite (Time)",
-        "2 is not used",
-        "Horizontal (2D)",
-        "Full Position (3D)",
-        "DGPS Reference",
-        "Clock Hold (2D)",
-        "Overdetermined Clock"];
-    const discipline_modes = [
-        "Normal",
-        "Power-Up",
-        "Auto Holdover",
-        "Manual Holdover",
-        "Recovery",
-        "Not Used",
-        "Disciplining disabled"];
-    const gps_status_map = new Map([
-        [0, "Doing fixes"],
-        [1, "Don’t have GPS time"],
-        [3, "PDOP is too high"],
-        [8, "No usable sats"],
-        [9, "Only 1 usable sat"],
-        [0x0a, "Only 2 usable sats"],
-        [0x0b, "Only 3 usable sats"],
-        [0x0c, "The chosen sat is unusable"],
-        [0x10, "TRAIM rejected the fix"]]);
-    const el = {};
-
-    function cache_dom() {
-        [
-            "altitude_value",
-            "auto_refresh",
-            "connected_value",
-            "critical_alarms_value",
-            "discipline_mode_value",
-            "fix_dim_value",
-            "gps_status_value",
-            "holdover_duration_value",
-            "latitude_value",
-            "longitude_value",
-            "minor_alarms_value",
-            "receiver_mode_value",
-            "refresh_radio_0",
-            "refresh_radio_1",
-            "refresh_radio_5",
-            "refresh_radio_60",
-            "satellites_value",
-            "time_value",
-            "time",
-            "unixtime_value"
-        ].forEach(id => el[id] = document.getElementById(id));
-    }
-
-    function page_load() {
-        cache_dom();
-        const params = new URLSearchParams(window.location.search);
-        const i = Number(params.get("update"));
-        if ([0, 1, 5, 60].includes(i)) {
-            update_secs = i;
-        }
-        get_status();
-    }
-
-    function process_get_status_response(message) {
-        let status_data = null;
-        try {
-            status_data = JSON.parse(message);
-        } catch (error) {
-            console.error("Error parsing status data", error);
-            console.error(message);
-            update_secs = 0;
-            return;
-        }
-        thunderbolt_data = status_data["thunderbolt_data"];
-        el.connected_value.textContent = thunderbolt_data.connected ? "True" : "False";
-        el.connected_value.className = thunderbolt_data.connected ? "item_value_green" : "item_value_red";
-        el.receiver_mode_value.textContent = receiver_modes[thunderbolt_data["receiver_mode"]] ?? "Unknown";
-        el.receiver_mode_value.className = thunderbolt_data["receiver_mode"] === 7 ? "item_value_green" : "item_value_red";
-        el.discipline_mode_value.textContent = discipline_modes[thunderbolt_data["discipline_mode"]] ?? "Unknown";
-        el.discipline_mode_value.className = thunderbolt_data["discipline_mode"] === 0 ? "item_value_green" : "item_value_red";
-        el.holdover_duration_value.textContent = thunderbolt_data['holdover_duration'] + ' sec.';
-        el.gps_status_value.textContent = gps_status_map.get(thunderbolt_data["gps_status"]) ?? "Unknown";
-        el.gps_status_value.className = (thunderbolt_data["gps_status"] === 0) ? "item_value_green" : "item_value_red";
-        let minor_alarms = thunderbolt_data['minor_alarms'];
-        let alarm_text = '';
-        let alarms = [];
-        if (minor_alarms & 0x0001) { // bit 0
-            alarms.push("Osc Rail");
-        }
-        if (minor_alarms & 0x0002) { // bit 1
-            alarms.push("Ant Open");
-        }
-        if (minor_alarms & 0x0004) { // bit 2
-            alarms.push("Ant Shorted");
-        }
-        if (minor_alarms & 0x0008) { // bit 3
-            alarms.push("No Sats");
-        }
-        if (minor_alarms & 0x0010) { // bit 4
-            alarms.push("Undisciplined");
-        }
-        if (minor_alarms & 0x0020) { // bit 5
-            alarms.push("Survey");
-        }
-        if (minor_alarms & 0x0040) { // bit 6
-            alarms.push("No EE Pos'n");
-        }
-        if (minor_alarms & 0x0080) { // bit 7
-            alarms.push("Leap Second");
-        }
-        if (minor_alarms & 0x0100) { // bit 8
-            alarms.push("Test Mode");
-        }
-        if (minor_alarms & 0x0200) { // bit 9
-            alarms.push("? Fix");
-        }
-        if (minor_alarms & 0x0400) { // bit 10
-            alarms.push("EEPROM Err");
-        }
-        if (minor_alarms & 0x0800) { // bit 11
-            alarms.push("Almanac");
+    <style>
+        body {
+            background-color: #ddd;
+            border-style: double;
+            font-family: sans-serif;
+            font-size: 10pt;
+            margin: 0;
+            height: 350px;
+            width: 500px;
         }
 
-        if (alarms.length === 0) {
-            alarm_text = "None";
-        } else {
-            alarm_text = alarms.join(",");
-        }
-        el.minor_alarms_value.textContent = alarm_text;
-        el.minor_alarms_value.className = thunderbolt_data["minor_alarms"] === 0 ? "item_value_green" : "item_value_red";
-
-        el.critical_alarms_value.textContent = thunderbolt_data['critical_alarms'];
-        el.critical_alarms_value.className = thunderbolt_data["critical_alarms"] === 0 ? "item_value_green" : "item_value_red";
-
-        el.latitude_value.textContent = (thunderbolt_data["latitude"] * DEGREES_RADIAN).toFixed(3).toString();
-        el.longitude_value.textContent = (thunderbolt_data["longitude"] * DEGREES_RADIAN).toFixed(3).toString();
-        el.altitude_value.textContent = (thunderbolt_data["altitude"] * FEET_METER).toFixed(1).toString();
-        el.satellites_value.textContent = thunderbolt_data["satellites"];
-        el.fix_dim_value.textContent = thunderbolt_data["fix_dim"];
-        el.unixtime_value.textContent = thunderbolt_data["unixtime"];
-        el.time_value.textContent = thunderbolt_data["time"];
-
-        let alarmed = (thunderbolt_data.minor_alarms !== 0) || (thunderbolt_data.connected !== true);
-        if (alarmed) {
-            el.time.textContent = "Alarm!";
-            el.time.style.color = "red";
-        } else {
-            const ut = thunderbolt_data.unixtime;
-            el.time.textContent =
-                (typeof ut === "string" && ut.length >= 19)
-                    ? ut.slice(11, 19) : "bad time";
-            el.time.style.color = "green";
+        .author {
+            font-size: 8pt;
+            font-weight: bold;
+            text-align: right;
+            position: absolute;
+            top: 340px;
+            left: 400px;
+            width: 100px;
         }
 
-        let button_secs = update_secs;
-        reset_refresh();
-
-        // set the radio buttons for automatic updating
-        el.refresh_radio_0.checked = (button_secs === 0);
-        el.refresh_radio_1.checked = (button_secs === 1);
-        el.refresh_radio_5.checked = (button_secs === 5);
-        el.refresh_radio_60.checked = (button_secs === 60);
-    }
-
-    function get_status() {
-        let xmlHttp = new XMLHttpRequest();
-        if (xmlHttp == null) {
-            alert("get a better browser!");
-            return;
+        .author a:link, .author a:visited, .author a:hover {
+            color: black;
+            text-decoration: none;
         }
-        xmlHttp.onreadystatechange = function () {
-            if (xmlHttp.readyState === 4) {
-                if (xmlHttp.status === 200) {
-                    el.auto_refresh.style.background = "inherit";
-                    process_get_status_response(xmlHttp.responseText);
-                } else {
-                    console.log("xmlHttp.status=" + xmlHttp.status);
-                    el.time.textContent = "offline";
-                    el.time.style.color = "red";
-                    el.auto_refresh.style.background = "red";
+
+        .bottom_links {
+            font-size: 8pt;
+            font-weight: bold;
+            color: black;
+            text-align: left;
+            position: absolute;
+            top: 340px;
+            width: 120px;
+        }
+
+        .bottom_links a:link, .bottom_links a:visited, .bottom_links a:hover {
+            color: blue;
+            text-decoration: none;
+            padding-right: 4px;
+        }
+
+        .data_table {
+            font-size: 8.5pt;
+            display: grid;
+            grid-template-columns: 50% 50%;
+            margin: 10px 0 0 0;
+        }
+
+        .header {
+            text-align: center;
+            font-size: 24pt;
+            font-weight: bold;
+            border-bottom: 24px;
+        }
+
+        .item_name {
+            text-align: right;
+            font-weight: bold;
+        }
+
+        .item_value {
+            padding-left: 0.5em;
+        }
+
+        .item_value_green {
+            color: #090;
+            padding-left: 0.5em;
+        }
+
+        .item_value_red {
+            color: #f00;
+            padding-left: 0.5em;
+        }
+
+        div.refresh_radio {
+            border: 1px solid black;
+            margin: 10px 150px 0 150px;
+            text-align: left;
+        }
+
+        .refresh_radio_label {
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .time {
+            border: 1px solid black;
+            border-radius: 6px;
+            text-align: center;
+            font-family: monospace;
+            font-weight: bold;
+            font-size: 32pt;
+            width: 5em;
+            margin: auto;
+        }
+
+        .two_columns {
+            display: grid;
+            grid-template-columns: 50% 50%;
+        }
+
+    </style>
+    <!--suppress JSUnusedLocalSymbols -->
+    <script>
+        const DEGREES_RADIAN = 57.29578;
+        const FEET_METER = 3.28084;
+
+        let update_secs = 60;
+        let update_timeout = 0;
+        let thunderbolt_data = {};
+        const receiver_modes = [
+            "Automatic (2D/3D)",
+            "Single Satellite (Time)",
+            "2 is not used",
+            "Horizontal (2D)",
+            "Full Position (3D)",
+            "DGPS Reference",
+            "Clock Hold (2D)",
+            "Overdetermined Clock"];
+        const discipline_modes = [
+            "Normal",
+            "Power-Up",
+            "Auto Holdover",
+            "Manual Holdover",
+            "Recovery",
+            "Not Used",
+            "Disciplining disabled"];
+        const gps_status_map = new Map([
+            [0, "Doing fixes"],
+            [1, "Don’t have GPS time"],
+            [3, "PDOP is too high"],
+            [8, "No usable sats"],
+            [9, "Only 1 usable sat"],
+            [0x0a, "Only 2 usable sats"],
+            [0x0b, "Only 3 usable sats"],
+            [0x0c, "The chosen sat is unusable"],
+            [0x10, "TRAIM rejected the fix"]]);
+        const el = {};
+
+        function cache_dom() {
+            const ids = [
+                "altitude_value",
+                "auto_refresh",
+                "connected_value",
+                "critical_alarms_value",
+                "discipline_mode_value",
+                "fix_dim_value",
+                "gps_status_value",
+                "holdover_duration_value",
+                "latitude_value",
+                "longitude_value",
+                "minor_alarms_value",
+                "receiver_mode_value",
+                "refresh_radio_0",
+                "refresh_radio_1",
+                "refresh_radio_5",
+                "refresh_radio_60",
+                "satellites_value",
+                "time_value",
+                "time",
+                "unixtime_value"];
+            ids.forEach(id => {
+                const node = document.getElementById(id);
+                if (!node) {
+                    console.warn(`Missing DOM element: ${id}`);
+                }
+                el[id] = node;
+            });
+        }
+
+        const MINOR_ALARM_BITS = [
+            "Osc Rail",
+            "Ant Open",
+            "Ant Shorted",
+            "No Sats",
+            "Undisciplined",
+            "Survey",
+            "No EE Pos'n",
+            "Leap Second",
+            "Test Mode",
+            "? Fix",
+            "EEPROM Err",
+            "Almanac"
+        ];
+
+        function decode_minor_alarms(mask) {
+            if (!mask) return "None";
+            return MINOR_ALARM_BITS
+                .filter((_, bit) => mask & (1 << bit))
+                .join(", ");
+        }
+
+        function set_value_color(node, ok) {
+            if (!node) return;
+            node.classList.toggle("item_value_green", ok);
+            node.classList.toggle("item_value_red", !ok);
+        }
+
+        function page_load() {
+            cache_dom();
+            const params = new URLSearchParams(window.location.search);
+            const i = Number(params.get("update"));
+            if ([0, 1, 5, 60].includes(i)) {
+                update_secs = i;
+            }
+            get_status();
+        }
+
+        function process_get_status_response(message) {
+            let status_data = null;
+            try {
+                status_data = JSON.parse(message);
+            } catch (error) {
+                console.error("Error parsing status data", error);
+                console.error(message);
+                reset_refresh();
+                return;
+            }
+            if (!status_data || typeof status_data.thunderbolt_data !== "object") {
+                console.error("Invalid status payload", status_data);
+                reset_refresh();
+                return;
+            }
+
+            thunderbolt_data = status_data.thunderbolt_data;
+            el.connected_value.textContent = thunderbolt_data.connected ? "True" : "False";
+            set_value_color(el.connected_value, thunderbolt_data.connected);
+            el.receiver_mode_value.textContent = receiver_modes[thunderbolt_data.receiver_mode] ?? "Unknown";
+            set_value_color(el.receiver_mode_value, thunderbolt_data.receiver_mode === 7);
+            el.discipline_mode_value.textContent = discipline_modes[thunderbolt_data.discipline_mode] ?? "Unknown";
+            set_value_color(el.discipline_mode_value, thunderbolt_data.discipline_mode === 0);
+            el.holdover_duration_value.textContent = thunderbolt_data.holdover_duration + ' sec.';
+            el.gps_status_value.textContent = gps_status_map.get(thunderbolt_data.gps_status) ?? "Unknown";
+            set_value_color(el.gps_status_value, thunderbolt_data.gps_status === 0);
+            el.minor_alarms_value.textContent = decode_minor_alarms(thunderbolt_data.minor_alarms);
+            set_value_color(el.minor_alarms_value, thunderbolt_data.minor_alarms === 0);
+            el.critical_alarms_value.textContent = thunderbolt_data.critical_alarms;
+            set_value_color(el.critical_alarms_value, thunderbolt_data.critical_alarms === 0);
+            el.latitude_value.textContent = (thunderbolt_data.latitude * DEGREES_RADIAN).toFixed(3);
+            el.longitude_value.textContent = (thunderbolt_data.longitude * DEGREES_RADIAN).toFixed(3);
+            el.altitude_value.textContent = (thunderbolt_data.altitude * FEET_METER).toFixed(1);
+            el.satellites_value.textContent = thunderbolt_data.satellites;
+            el.fix_dim_value.textContent = thunderbolt_data.fix_dim;
+            el.unixtime_value.textContent = thunderbolt_data.unixtime;
+            el.time_value.textContent = thunderbolt_data.time;
+
+            let alarmed =
+                thunderbolt_data.connected !== true ||
+                thunderbolt_data.minor_alarms !== 0 ||
+                thunderbolt_data.critical_alarms !== 0;
+
+            if (alarmed) {
+                el.time.textContent = "Alarm!";
+                el.time.style.color = "red";
+            } else {
+                const ut = thunderbolt_data.unixtime;
+                el.time.textContent = (typeof ut === "string" && ut.length >= 19) ? ut.slice(11, 19) : "bad time";
+                el.time.style.color = "green";
+            }
+
+            let button_secs = update_secs;
+
+            // set the radio buttons for automatic updating
+            el.refresh_radio_0.checked = (button_secs === 0);
+            el.refresh_radio_1.checked = (button_secs === 1);
+            el.refresh_radio_5.checked = (button_secs === 5);
+            el.refresh_radio_60.checked = (button_secs === 60);
+        }
+
+        function get_status() {
+            let xmlHttp = new XMLHttpRequest();
+            if (xmlHttp == null) {
+                alert("get a better browser!");
+                return;
+            }
+            xmlHttp.onreadystatechange = function () {
+                if (xmlHttp.readyState === 4) {
+                    if (xmlHttp.status === 200) {
+                        el.auto_refresh.style.background = "inherit";
+                        process_get_status_response(xmlHttp.responseText);
+                    } else {
+                        console.log("xmlHttp.status=" + xmlHttp.status);
+                        el.time.textContent = "offline";
+                        el.time.style.color = "red";
+                    }
                     reset_refresh();
                 }
             }
-        }
-        xmlHttp.onerror = function () {
-            if (update_secs > 0) {
-                update_timeout = setTimeout(get_status, update_secs * 1000);
+            xmlHttp.onerror = function () {
+                if (update_secs > 0) {
+                    reset_refresh();
+                }
             }
-        }
-        xmlHttp.ontimeout = function () {
-            if (update_secs > 0) {
-                update_timeout = setTimeout(get_status, update_secs * 1000);
+            xmlHttp.ontimeout = function () {
+                if (update_secs > 0) {
+                    reset_refresh();
+                }
             }
+            xmlHttp.open("GET", "/api/status", true);
+            xmlHttp.timeout = 1000;
+            xmlHttp.send();
         }
-        xmlHttp.open("GET", "/api/status", true);
-        xmlHttp.timeout = 1000;
-        xmlHttp.send();
-    }
 
-    function reset_refresh() {
-        if (update_timeout !== 0) {
-            clearTimeout(update_timeout)
-            update_timeout = 0;
-        }
-        if (update_secs > 0) {
-            update_timeout = setTimeout(get_status, update_secs * 1000);
-        }
-    }
-
-    function set_refresh(secs) {
-        update_secs = secs
-        if (update_secs === 0) {
+        function reset_refresh() {
             if (update_timeout !== 0) {
                 clearTimeout(update_timeout)
                 update_timeout = 0;
             }
-        } else {
-            get_status();
+            if (update_secs > 0) {
+                update_timeout = setTimeout(get_status, update_secs * 1000);
+            }
         }
-        el.auto_refresh.style.background = "inherit";
-    }
 
-    window.addEventListener("load", page_load);
-</script>
+        function set_refresh(secs) {
+            update_secs = secs
+            if (update_secs === 0) {
+                if (update_timeout !== 0) {
+                    clearTimeout(update_timeout)
+                    update_timeout = 0;
+                }
+            } else {
+                get_status();
+            }
+            el.auto_refresh.style.background = "inherit";
+        }
+
+        window.addEventListener("load", page_load);
+    </script>
+</head>
 
 <body>
 <div class="header">Thunderbolt Monitor</div>
