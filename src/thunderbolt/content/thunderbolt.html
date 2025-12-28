@@ -37,7 +37,6 @@
             text-align: left;
             position: absolute;
             top: 340px;
-            width: 120px;
         }
 
         .bottom_links a:link, .bottom_links a:visited, .bottom_links a:hover {
@@ -80,14 +79,15 @@
         }
 
         div.refresh_radio {
-            border: 1px solid black;
-            margin: 10px 150px 0 150px;
-            text-align: left;
+            margin-top: 2em;
+            display: flex;
+            justify-content: space-evenly;
+            flex-direction: row;
         }
 
-        .refresh_radio_label {
-            font-weight: bold;
-            text-align: center;
+        .selected {
+            color: red;
+            padding-right: 4px;
         }
 
         .time {
@@ -372,24 +372,25 @@
         <div class="item_value" id="time_value"></div>
     </div>
 </div>
-<div class="row">
-    <div class="refresh_radio">
-        <div class="refresh_radio_label" id="auto_refresh">Auto-Refresh</div>
+<div class="refresh_radio">
+    <fieldset>
+        <legend>Auto-Refresh</legend>
         <input type="radio" name="refresh_radio" id="refresh_radio_0" value="0" onclick="set_refresh(0)"/>
-        <label for="refresh_radio_0">Never</label><br>
+        <label for="refresh_radio_0">Never&nbsp;&nbsp;&nbsp;&nbsp;</label>
         <input type="radio" name="refresh_radio" id="refresh_radio_1" value="1" onclick="set_refresh(1)"/>
-        <label for="refresh_radio_1">1 second</label><br>
+        <label for="refresh_radio_1">1 second&nbsp;&nbsp;&nbsp;&nbsp;</label>
         <input type="radio" name="refresh_radio" id="refresh_radio_5" value="5" onclick="set_refresh(5)"/>
-        <label for="refresh_radio_5">5 seconds</label><br>
+        <label for="refresh_radio_5">5 seconds&nbsp;&nbsp;&nbsp;&nbsp;</label>
         <input type="radio" name="refresh_radio" id="refresh_radio_60" value="60" onclick="set_refresh(60)"/>
-        <label for="refresh_radio_60">60 seconds</label><br>
-    </div>
+        <label for="refresh_radio_60">60 seconds</label>
+    </fieldset>
 </div>
-<div class="row">
-    <div class="bottom_links">
-        <a href="setup.html">Setup</a>
-    </div>
-    <div class="author"><a href="https://www.n1kdo.com" target="_blank">N1KDO</a> 20251227</div>
+<div class="bottom_links">
+    <span class="selected">Thunderbolt</span>
+    <a href="setup.html">Setup</a>
+    <a href="files.html">Files</a>
 </div>
+<div class="author"><a href="https://www.n1kdo.com" target="_blank">N1KDO</a> 20251228</div>
+
 </body>
 </html>
