@@ -60,22 +60,22 @@
         }
 
         .item_name {
+            padding-top: 0.5em;
             text-align: right;
             font-weight: bold;
         }
 
         .item_value {
+            padding-top: 0.5em;
             padding-left: 0.5em;
         }
 
         .item_value_green {
             color: #090;
-            padding-left: 0.5em;
         }
 
         .item_value_red {
             color: #f00;
-            padding-left: 0.5em;
         }
 
         div.refresh_radio {
@@ -147,7 +147,6 @@
         function cache_dom() {
             const ids = [
                 "altitude_value",
-                "auto_refresh",
                 "connected_value",
                 "critical_alarms_value",
                 "discipline_mode_value",
@@ -283,7 +282,6 @@
             xmlHttp.onreadystatechange = function () {
                 if (xmlHttp.readyState === 4) {
                     if (xmlHttp.status === 200) {
-                        el.auto_refresh.style.background = "inherit";
                         process_get_status_response(xmlHttp.responseText);
                     } else {
                         console.log("xmlHttp.status=" + xmlHttp.status);
@@ -328,7 +326,6 @@
             } else {
                 get_status();
             }
-            el.auto_refresh.style.background = "inherit";
         }
 
         window.addEventListener("load", page_load);
@@ -391,6 +388,5 @@
     <a href="files.html">Files</a>
 </div>
 <div class="author"><a href="https://www.n1kdo.com" target="_blank">N1KDO</a> 20251228</div>
-
 </body>
 </html>
