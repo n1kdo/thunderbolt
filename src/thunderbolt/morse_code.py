@@ -23,19 +23,13 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-__version__ = '0.9.5'
+__version__ = '0.9.6'  # 2025-12-29
 
 # disable pylint import error
 # pylint: disable=E0401
 
 import asyncio
-import sys
-
-impl_name = sys.implementation.name
-if impl_name == 'cpython':
-    import logging
-else:
-    import micro_logging as logging
+import micro_logging as logging
 
 
 class MorseCode:
@@ -60,7 +54,7 @@ class MorseCode:
         #  'B': (MORSE_DAH, MORSE_DIT, MORSE_DIT, MORSE_DIT),
         #  'C': (MORSE_DAH, MORSE_DIT, MORSE_DAH, MORSE_DIT),
         #  'D': (MORSE_DAH, MORSE_DIT, MORSE_DIT),
-        'E': (MORSE_DIT, ),
+        'E': (MORSE_DIT, ), # note that this comma is important, it is a tuple with one element
         'H': (MORSE_DIT, MORSE_DIT, MORSE_DIT, MORSE_DIT),
         'I': (MORSE_DIT, MORSE_DIT),
         'N': (MORSE_DAH, MORSE_DIT),
@@ -101,12 +95,11 @@ class MorseCode:
                     logging.debug(f'No pattern for letter "{morse_letter}" ({ord(morse_letter)})',
                                   'morse_code:morse_sender')
                     blink_pattern = patterns.get(' ')
-                blink_list = list(blink_pattern)
-                while len(blink_list) > 0:
-                    blink_time = blink_list.pop(0)
+                for blink_time in blink_pattern:
                     if blink_time > 0:
                         # blink time is in milliseconds!, but data is in 10 msec
                         led.on()
-                        await sleep(blink_time/100)
+                        await sleep(blink_time / 100)  # dit or dah
                         led.off()
-                    await sleep(morse_esp / 100 if len(blink_list) > 0 else morse_lsp / 100)
+                    await sleep(morse_esp / 100)  # dit length element space
+                await sleep(morse_lsp / 100)  # + inter-letter space
