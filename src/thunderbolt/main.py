@@ -32,7 +32,6 @@ __version__ = '0.9.6'  # 2025-12-26
 # pylint: disable=E0401
 
 import asyncio
-import json
 import time
 
 import micro_logging as logging
@@ -44,6 +43,7 @@ from thunderbolt import Thunderbolt
 from morse_code import MorseCode
 from utils import upython, safe_int
 from picow_network import PicowNetwork
+from config_data import ConfigData
 
 
 if upython:
@@ -66,10 +66,9 @@ onboard = machine.Pin('LED', machine.Pin.OUT, value=0)
 morse_led = machine.Pin(2, machine.Pin.OUT, value=0)  # morse code LED GP2
 failed_led = machine.Pin(16, machine.Pin.OUT, value=0)  # comms failed LED GP16 pin 21
 status_led = machine.Pin(15, machine.Pin.OUT, value=0)  # status LED GP15 pin 20
-reset_button = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)  # GP3
+ap_mode_button = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)  # GP3
 
 BUFFER_SIZE = 4096
-CONFIG_FILE = 'data/config.json'
 CONTENT_DIR = 'content/'
 
 # noinspection SpellCheckingInspection
@@ -84,33 +83,7 @@ thunderbolt = None
 # http server
 http_server = HttpServer(content_dir=CONTENT_DIR)
 
-
-def read_config():
-    try:
-        with open(CONFIG_FILE, 'r') as config_file:
-            config = json.load(config_file)
-    except Exception as ex:
-        logging.error(f'failed to load configuration! {type(ex)} {ex}', 'main:read_config')
-        config = {
-            'SSID': DEFAULT_SSID,
-            'secret': DEFAULT_SSID,
-            'username': 'admin',
-            'password': 'admin',
-            'dhcp': True,
-            'hostname': 'thunderbolt',
-            'ip_address': '192.168.1.73',
-            'netmask': '255.255.255.0',
-            'gateway': '192.168.1.1',
-            'dns_server': '8.8.8.8',
-            'web_port': str(DEFAULT_WEB_PORT),
-        }
-    return config
-
-
-def save_config(config):
-    with open(CONFIG_FILE, 'w') as config_file:
-        json.dump(config, config_file)
-
+config = ConfigData()
 
 # noinspection PyUnusedLocal
 @http_server.route(b'/')
@@ -124,12 +97,11 @@ async def slash_callback(http, verb, args, reader, writer, request_headers=None)
 @http_server.route(b'/api/config')
 async def api_config_callback(http, verb, args, reader, writer, request_headers=None):  # callback for '/api/config'
     if verb == HTTP_VERB_GET:
-        payload = read_config()
-        payload.pop('secret')  # do not return the secret
+        payload = dict(config.get_data())
+        payload['secret'] = ''  # do not return the secret
         http_status = 200
         bytes_sent = await http.send_simple_response(writer, http_status, http.CT_APP_JSON, payload)
     elif verb == HTTP_VERB_POST:
-        config = read_config()
         dirty = False
         errors = False
         tcp_port = args.get('tcp_port')
@@ -211,7 +183,7 @@ async def api_config_callback(http, verb, args, reader, writer, request_headers=
             dirty = True
         if not errors:
             if dirty:
-                save_config(config)
+                config.flush()
             response = b'ok\r\n'
             http_status = 200
             bytes_sent = await http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
@@ -261,25 +233,22 @@ async def main():
     logging.info('Starting...', 'main:main')
     time_set = False
 
-    config = read_config()
-
     if upython:
         thunderbolt_port = '0'
+        ap_mode = ap_mode_button.value() == 0
     else:
         thunderbolt_port = 'com1'
+        ap_mode = False
 
     web_port = safe_int(config.get('web_port') or DEFAULT_WEB_PORT, DEFAULT_WEB_PORT)
     if web_port < 0 or web_port > 65535:
         web_port = DEFAULT_WEB_PORT
         config['web_port'] = str(web_port)
 
-    ap_mode = config.get('ap_mode', False)
-
-    connected = True
     if upython:
-        picow_network = PicowNetwork(config, DEFAULT_SSID, DEFAULT_SECRET)
+        picow_network = PicowNetwork(config, DEFAULT_SSID, DEFAULT_SECRET, access_point_mode=ap_mode)
         morse_code_sender = MorseCode(morse_led)
-        if logging.loglevel != logging.DEBUG and Watchdog is not None:
+        if logging.get_level() != logging.DEBUG and Watchdog is not None:
             _ = Watchdog()
 
     else:
@@ -295,25 +264,12 @@ async def main():
     logging.info(f'Starting web service on port {web_port}', 'main:main')
     web_server = asyncio.create_task(asyncio.start_server(http_server.serve_http_client, '0.0.0.0', web_port))
 
-    reset_button_pressed_count = 0
     four_count = 0
     last_message = ''
     while keep_running:
         if upython:
             await asyncio.sleep(0.25)
             four_count += 1
-            pressed = reset_button.value() == 0
-            if pressed:
-                reset_button_pressed_count += 1
-            else:
-                if reset_button_pressed_count > 0:
-                    reset_button_pressed_count -= 1
-            if reset_button_pressed_count > 7:
-                logging.info('reset button pressed', 'main:main')
-                ap_mode = not ap_mode
-                config['ap_mode'] = ap_mode
-                save_config(config)
-                keep_running = False
             if four_count >= 3:  # check for new message every one second
                 if picow_network.get_message() != last_message:
                     last_message = picow_network.get_message()
@@ -338,8 +294,8 @@ async def main():
 
 
 if __name__ == '__main__':
-    logging.loglevel = logging.INFO
-    # logging.loglevel = logging.DEBUG
+    logging.set_level(logging.INFO)
+    # logging.set_level(logging.DEBUG)
     logging.info('starting', 'main:__main__')
     try:
         asyncio.run(main())
