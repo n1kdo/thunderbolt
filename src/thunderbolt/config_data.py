@@ -4,8 +4,7 @@
 
 __author__ = 'J. B. Otterson'
 __copyright__ = 'Copyright 2026 J. B. Otterson N1KDO.'
-__version__ = '0.0.1'  # 2026-01-01
-
+__version__ = '0.0.2'  # 2026-11-16
 #
 # Copyright 2026 J. B. Otterson N1KDO.
 #
@@ -42,8 +41,6 @@ class ConfigData(CachedConfigData):
         return {
             'SSID': 'your_network_ssid',
             'secret': 'your_network_password',
-            'username': 'admin',
-            'password': 'admin',
             'dhcp': True,
             'hostname': 'thunderbolt',
             'ip_address': '192.168.1.73',
