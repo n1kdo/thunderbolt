@@ -22,7 +22,7 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-__version__ = '0.1.2'  # 2026-04-27
+__version__ = '0.2.0'  # 2026-11-11
 
 from utils import get_timestamp, upython
 
@@ -38,11 +38,15 @@ CRITICAL = const(1)
 NOTHING = const(0)
 LEVEL_NAMES = ('NOTHING', 'CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG')
 
-loglevel = ERROR
+_loglevel = ERROR
+
+
+def get_level():
+    return _loglevel
 
 
 def set_level(level):
-    global loglevel
+    global _loglevel
     if isinstance(level, str):
         level = level.upper()
         try:
@@ -52,54 +56,52 @@ def set_level(level):
 
     if isinstance(level, int):
         if NOTHING <= level <= DEBUG:
-            if loglevel >= INFO or level >= INFO:
-                _log('[INFO]     ', f'setting log level to {LEVEL_NAMES[level]}', 'micro_logging:set_level')
-            loglevel = level
+            if _loglevel >= INFO or level >= INFO:
+                _log('[INFO]     ', 'setting log level to %s' % LEVEL_NAMES[level], 'micro_logging:set_level')
+            _loglevel = level
 
 
 # this is used to determine if logging.level() methods should be called,
 # purpose is to reduce heap pollution from building complex log messages.
 def should_log(level):
-    return level <= loglevel
+    return level <= _loglevel
 
 
-def _log(level: str, message: str|bytes, caller=None):
-    if isinstance(message, bytes):
-        message = message.decode()
+def _log(level: str, message: str | bytes, caller: str = None):
     if caller is None:
         print(get_timestamp(), level, message)
     else:
         print(get_timestamp(), ' ', level, ' [', caller, '] ', message, sep='')
 
 
-def debug(message, caller=None):
-    if loglevel >= DEBUG:
+def debug(message: str | bytes, caller: str = None):
+    if _loglevel >= DEBUG:
         _log('[DEBUG]    ', message, caller)
 
 
-def info(message, caller=None):
-    if loglevel >= INFO:
+def info(message: str | bytes, caller: str = None):
+    if _loglevel >= INFO:
         _log('[INFO]     ', message, caller)
 
 
-def warning(message, caller=None):
-    if loglevel >= WARNING:
+def warning(message: str | bytes, caller: str = None):
+    if _loglevel >= WARNING:
         _log('[WARNING]  ', message, caller)
 
 
-def error(message, caller=None):
-    if loglevel >= ERROR:
+def error(message: str | bytes, caller: str = None):
+    if _loglevel >= ERROR:
         _log('[ERROR]    ', message, caller)
 
 
-def exception(message:str, caller:str = None, exc_info:Exception = None) -> None:
+def exception(message: str | bytes, caller: str = None, exc_info: Exception = None) -> None:
+    # Note that exceptions log regardless of loglevel -- these messages are always logged.
     if exc_info is not None:
-        _log('[EXCEPTION]', f'{message} {type(exc_info)} {exc_info}', caller)
+        _log('[EXCEPTION]', '%s %s %s' % (message, type(exc_info).__name__, exc_info), caller)
     else:
         _log('[EXCEPTION]', message, caller)
 
 
-def critical(message, caller=None):
-    if loglevel >= CRITICAL:
+def critical(message: str | bytes, caller: str = None):
+    if _loglevel >= CRITICAL:
         _log('[CRITICAL] ', message, caller)
-

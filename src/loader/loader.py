@@ -1,7 +1,7 @@
 #!/bin/env python3
 __author__ = 'J. B. Otterson'
 __copyright__ = """
-Copyright 2022, 2024, 2025 J. B. Otterson N1KDO.
+Copyright 2022, 2024, 2025, 2026 J. B. Otterson N1KDO.
 Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
   1. Redistributions of source code must retain the above copyright notice, 
@@ -20,15 +20,23 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-__version__ = '0.10.7'  # 2025-12-31
+__version__ = '0.10.93'  # 2026-10-29
 
 """
 Note: to edit linux forced device names, edit
 /etc/udev/rules.d/99-usb-serial.rules
 see: https://programmador.com/posts/2023/linux-usb-serial-device-name-binding/
 see: https://k4sbc.com/consistently-name-usb-serial-ports/
+
+plug in the device, the data you need will be shown by `dmesg`
+edit the file /etc/udev/rules.d/99-usb-serial.rules
+then 
+$ udevadm control --reload-rules
+$ udevadm trigger
 """
 import argparse
+import fnmatch
+import glob
 import hashlib
 import json
 import os
@@ -44,6 +52,14 @@ _BAUD_RATE = 115200
 _BUFFER_SIZE = 2048
 
 _WATCHDOG_PY = 'watchdog.py'
+
+
+def is_pattern(filename):
+    return '*' in filename or '?' in filename
+
+
+def matches_special(path, special_files_list):
+    return any(fnmatch.fnmatchcase(path, pattern) for pattern in special_files_list)
 
 class BytesConcatenator:
     """
@@ -88,11 +104,17 @@ def put_file(filename, target, source_directory='.', src_file_name=None):
     else:
         try:
             os.stat(src_file_name)
+        except OSError:
+            print(f'cannot find source file {src_file_name}')
+            return False
+        try:
             print(f'sending file {src_file_name} to {filename}')
             target.fs_put(src_file_name, filename, progress_callback=put_file_progress_callback)
             print()
-        except OSError:
-            print(f'cannot find source file {src_file_name}')
+        except (OSError, SerialException) as exc:
+            # a transient USB/serial glitch surfaces here; the local file is fine.
+            # the next loader run re-sends any partially written file (sha1 mismatch).
+            print(f'error sending {src_file_name}: {exc}')
             return False
     return True
 
@@ -138,11 +160,21 @@ for f in uos.ilistdir('{src}'):
 
 
 def loader_reset(target):
-    files_data = BytesConcatenator()
-    cmd = f"""import machine
+    time.sleep(2)
+    target.serial.write(b"\x04")  # control-D -- restart
+    time.sleep(2)
+
+
+def loader_hard_reset(target):
+#   reset_data = BytesConcatenator()
+    time.sleep(2)
+    cmd = """import machine
 machine.reset()
 """
-    target.exec_(cmd, data_consumer=files_data.write_bytes)
+    target.exec_raw_no_follow(cmd)
+
+#    target.exec_(cmd, data_consumer=reset_data.write_bytes)
+    time.sleep(2)
 
 
 def loader_sha1(target, file=''):
@@ -203,20 +235,23 @@ def load_device(port, force=False,
             restart = True
 
     if restart:
+        disconnected = False
         try:
+            target.close()
+            disconnected = True
             print('resetting target device...')
-            loader_reset(target)
         except SerialException as e:
+            print('got serial exception, must have disconnected...')
+            disconnected = True
             time.sleep(3)
-        else:
-            print('expected disconnect on reset, something is wrong?')
 
-        try:
-            print('reconnecting to target device...')
-            target = Pyboard(port, _BAUD_RATE)
-        except PyboardError:
-            print(f'cannot connect to device {port}')
-            sys.exit(1)
+        if disconnected:
+            try:
+                print('reconnecting to target device...')
+                target = Pyboard(port, _BAUD_RATE)
+            except PyboardError:
+                print(f'cannot connect to device {port}')
+                sys.exit(1)
 
         target.enter_raw_repl()
 
@@ -233,12 +268,12 @@ def load_device(port, force=False,
     # clean up files that do not belong here.
     existing_files = loader_ls(target)
     for existing_file in existing_files:
-        if existing_file in special_files_list:
-            continue  # do not delete any special file
+        if matches_special(existing_file, special_files_list):
+            continue  # do not delete any special file (literal or wildcard match)
         safe_to_delete = True
         if existing_file[-1] == '/':
-            for special_file in special_files_list:
-                if existing_file in special_file:
+            for child in existing_files:
+                if child.startswith(existing_file) and matches_special(child, special_files_list):
                     safe_to_delete = False
                     break
         if not safe_to_delete:
@@ -271,10 +306,20 @@ def load_device(port, force=False,
             if file not in existing_files:
                 put_file(file, target, source_directory=source_directory)
 
-    # this is logic that will not overwrite any of the SPECIAL FILES if present,
-    # if it is not present, it will use the contents of $file.example
+    # this is logic that will not overwrite any of the SPECIAL FILES if present.
+    # if a special file is not present on the device, it will be seeded from
+    # the local <file>.example.  wildcard entries glob <pattern>.example locally
+    # and seed each match under its name without the .example suffix.
     for file in special_files_list:
-        if file not in existing_files:
+        if is_pattern(file):
+            for local_example in sorted(glob.glob(os.path.join(source_directory, file + '.example'))):
+                # relpath() uses the host OS separator; the device VFS always wants '/'.
+                device_path = os.path.relpath(local_example, source_directory)[:-len('.example')]
+                device_path = device_path.replace(os.sep, '/')
+                if device_path not in existing_files:
+                    put_file(device_path, target, source_directory=source_directory,
+                             src_file_name=os.path.relpath(local_example, source_directory))
+        elif file not in existing_files:
             put_file(file, target, source_directory=source_directory, src_file_name=f'{file}.example')
     target.exit_raw_repl()
     # done updating file system, restart the device and show the output
@@ -314,19 +359,11 @@ def main():
                         help='name of manifest file',
                         default='loader_manifest.json')
     args = parser.parse_args()
-    if 'bootloader' in args:
-        bootloader = args.bootloader
-    else:
-        bootloader = False
-    if 'force' in args:
-        force = args.force
-    else:
-        force = False
-    if 'no_watchdog' in args:
-        no_watchdog = args.no_watchdog
-    else:
-        no_watchdog = False
-    if 'port' in args and args.port is not None:
+    bootloader = args.bootloader
+    force = args.force
+    no_watchdog = args.no_watchdog
+
+    if args.port is not None:
         picow_port = args.port
     else:
         print('Disconnect the Pico-W if it is connected.')

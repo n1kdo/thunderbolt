@@ -149,6 +149,18 @@ class Thunderbolt:
         device_port = self.device_port
 
         # send init (8E A5) message to enable the messages I want.
+        # here are the bitmask values for bytes 1-2 of the message.
+        # I am making an assumption that since only 6 bits are specified, byte 2 will be all zeros.
+        # LSB
+        # 0  0x8F-AB, Primary Timing Information
+        # 1  reserved
+        # 2  0x8F-AC, Supplemental Timing Information
+        # 3  reserved
+        # 4  0x8F-A7, Individual Satellite Solutions (Format 0)
+        # 5  0x8F-A7, Individual Satellite Solutions (Format 1)
+        # 6  0x58 GPS System Data, 0x5B Ephemeris Status, 0x6D Selection List
+        # 7  not specified (!)
+        # MSB
         message = b'\x10\x8e\xa5\x00\x45\x00\x00\x10\x03'
         device_port.write(message)
         device_port.flush()
@@ -233,7 +245,7 @@ class Thunderbolt:
                 # see Section A.9.34 in Thunderbolt Book, page A-29
                 # logging.debug(f'satellite selection list, len={offset}', 'thunderbolt:process_buffer:0x6d')
                 # print(hexdump_buffer(buffer[:offset]))
-                num_sats = offset - 18
+                num_sats = offset - 19
                 # logging.debug(f'num_sats={num_sats}', 'thunderbolt:process_buffer:0x6d')
                 fmt = '>xBffff' + 'b' * num_sats
                 # print(f'fmt = {fmt}')
@@ -267,7 +279,7 @@ class Thunderbolt:
                     self.fix_dim = 0
                 num_sats = (bm & 0xf0) >> 4
                 # logging.debug(f'fix_dim = {self.fix_dim}, num_sats = {num_sats}',  'thunderbolt:process_buffer:0x6d')
-                self.satellites = sorted(list(stuff[5:]))
+                self.satellites = sorted(list(stuff[6:]))
                 # print(stuff)
                 # print(self.fix_dim, self.pdop, self.hdop, self.vdop, self.tdop, self.satellites)
                 # print()
