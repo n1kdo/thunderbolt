@@ -3,7 +3,7 @@
 #
 __author__ = 'J. B. Otterson'
 __copyright__ = 'Copyright 2023, 2024, 2025 J. B. Otterson N1KDO.'
-__version__ = '0.9.7'  # 2026-11-16
+__version__ = '0.9.8'  # 2026-11-16
 
 #
 # Copyright 2024, 2025, 2026 J. B. Otterson N1KDO.
@@ -41,7 +41,7 @@ from http_server import (HttpServer,
                          HTTP_VERB_GET, HTTP_VERB_POST)
 from thunderbolt import Thunderbolt
 from morse_code import MorseCode
-from utils import upython, safe_int
+from utils import upython, safe_int, is_hostname, is_ipv4
 from picow_network import PicowNetwork
 from config_data import ConfigData
 
@@ -56,19 +56,13 @@ else:
     from not_machine import machine
     Watchdog = None
 
-
-    def const(i):  # support micropython const() in cpython
-        return i
-
 _rtc = machine.RTC()
 
-onboard = machine.Pin('LED', machine.Pin.OUT, value=0)
 morse_led = machine.Pin(2, machine.Pin.OUT, value=0)  # morse code LED GP2
 failed_led = machine.Pin(16, machine.Pin.OUT, value=0)  # comms failed LED GP16 pin 21
 status_led = machine.Pin(15, machine.Pin.OUT, value=0)  # status LED GP15 pin 20
 ap_mode_button = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)  # GP3
 
-BUFFER_SIZE = 4096
 CONTENT_DIR = 'content/'
 
 # noinspection SpellCheckingInspection
@@ -102,88 +96,78 @@ async def api_config_callback(http, verb, args, reader, writer, request_headers=
         http_status = HTTP_STATUS_OK
         bytes_sent = await http.send_simple_response(writer, http_status, http.CT_APP_JSON, payload)
     elif verb == HTTP_VERB_POST:
-        dirty = False
+        # A POST with no recognized configuration keys has nothing to do. That includes malformed JSON
+        # bodies, which the server decodes as an empty dict -- do not pretend they succeeded.
+        if not isinstance(args, dict) or not any(key in args for key in ('web_port', 'SSID', 'secret',
+                                                                         'hostname', 'dhcp',
+                                                                         'ip_address', 'netmask',
+                                                                         'gateway', 'dns_server')):
+            response = b'no configuration data\r\n'
+            http_status = HTTP_STATUS_BAD_REQUEST
+            bytes_sent = await http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
+            return bytes_sent, http_status
         errors = False
-        tcp_port = args.get('tcp_port')
-        if tcp_port is not None:
-            tcp_port_int = safe_int(tcp_port, -2)
-            if 0 <= tcp_port_int <= 65535:
-                config['tcp_port'] = tcp_port
-                dirty = True
-            else:
-                errors = True
         web_port = args.get('web_port')
         if web_port is not None:
             web_port_int = safe_int(web_port, -2)
-            if 0 <= web_port_int <= 65535:
+            if 1 <= web_port_int <= 65535:
                 config['web_port'] = web_port
-                dirty = True
             else:
                 errors = True
+                logging.warning('web_port %s not valid' % web_port_int, 'main:api_config_callback')
         ssid = args.get('SSID')
         if ssid is not None:
-            if 0 < len(ssid) < 64:
+            if 0 < len(ssid) <= 32:
                 config['SSID'] = ssid
-                dirty = True
             else:
                 errors = True
+                logging.warning('ssid  %s not valid' % ssid, 'main:api_config_callback')
         secret = args.get('secret')
-        if secret is not None:
-            if 8 <= len(secret) < 32:
+        if secret is not None and len(secret) > 0:
+            if 8 <= len(secret) <= 64:
                 config['secret'] = secret
-                dirty = True
             else:
                 errors = True
-        remote_username = args.get('username')
-        if remote_username is not None:
-            if 1 <= len(remote_username) <= 16:
-                config['username'] = remote_username
-                dirty = True
-            else:
-                errors = True
-        remote_password = args.get('password')
-        if remote_password is not None:
-            if 1 <= len(remote_password) <= 16:
-                config['password'] = remote_password
-                dirty = True
-            else:
-                errors = True
-        ap_mode_arg = args.get('ap_mode')
-        if ap_mode_arg is not None:
-            ap_mode = ap_mode_arg == '1'
-            config['ap_mode'] = ap_mode
-            dirty = True
-        dhcp_arg = args.get('dhcp')
-        if dhcp_arg is not None:
-            dhcp = dhcp_arg == 1
-            config['dhcp'] = dhcp
-            dirty = True
+                logging.warning('secret %s not valid' % secret, 'main:api_config_callback')
         hostname = args.get('hostname')
         if hostname is not None:
-            if 1 <= len(hostname) <= 16:
+            if is_hostname(hostname):
                 config['hostname'] = hostname
-                dirty = True
             else:
                 errors = True
+                logging.warning('hostname %s not valid' % hostname, 'main:api_config_callback')
+        dhcp_arg = args.get('dhcp')
+        if dhcp_arg is not None:
+            config['dhcp'] = safe_int(dhcp_arg, 0) == 1
         ip_address = args.get('ip_address')
         if ip_address is not None:
-            config['ip_address'] = ip_address
-            dirty = True
+            if ip_address == '' or is_ipv4(ip_address):
+                config['ip_address'] = ip_address
+            else:
+                errors = True
+                logging.warning('ip_address %s not valid' % ip_address, 'main:api_config_callback')
         netmask = args.get('netmask')
         if netmask is not None:
-            config['netmask'] = netmask
-            dirty = True
+            if netmask == '' or (is_ipv4(netmask) and netmask != '0.0.0.0'):
+                config['netmask'] = netmask
+            else:
+                errors = True
+                logging.warning('netmask %s not valid' % netmask, 'main:api_config_callback')
         gateway = args.get('gateway')
         if gateway is not None:
-            config['gateway'] = gateway
-            dirty = True
+            if gateway == '' or is_ipv4(gateway):
+                config['gateway'] = gateway
+            else:
+                errors = True
+                logging.warning('gateway %s not valid' % gateway, 'main:api_config_callback')
         dns_server = args.get('dns_server')
         if dns_server is not None:
-            config['dns_server'] = dns_server
-            dirty = True
+            if dns_server == '' or is_ipv4(dns_server):
+                config['dns_server'] = dns_server
+            else:
+                errors = True
+                logging.warning('dns_server %s not valid' % dns_server, 'main:api_config_callback')
         if not errors:
-            if dirty:
-                config.flush()
             response = b'ok\r\n'
             http_status = HTTP_STATUS_OK
             bytes_sent = await http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
@@ -206,11 +190,11 @@ async def api_restart_callback(http, verb, args, reader, writer, request_headers
         keep_running = False
         response = b'ok\r\n'
         http_status = HTTP_STATUS_OK
-        bytes_sent = http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
+        bytes_sent = await http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
     else:
         http_status = HTTP_STATUS_BAD_REQUEST
         response = b'not permitted except on PICO-W'
-        bytes_sent = http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
+        bytes_sent = await http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
     return bytes_sent, http_status
 
 
@@ -265,15 +249,16 @@ async def main():
     web_server = asyncio.create_task(asyncio.start_server(http_server.serve_http_client, '0.0.0.0', web_port))
 
     four_count = 0
-    last_message = ''
+    last_message = b''
     while keep_running:
         if upython:
             await asyncio.sleep(0.25)
             four_count += 1
-            if four_count >= 3:  # check for new message every one second
-                if picow_network.get_message() != last_message:
-                    last_message = picow_network.get_message()
-                    morse_code_sender.set_message(last_message)
+            if four_count >= 4:  # check for new message every one second
+                msg = picow_network.get_message()
+                if msg and msg != last_message:
+                    last_message = msg
+                    morse_code_sender.set_message(msg)
                 four_count = 0
             # set the RP2 RTC to the current time... because... why not?
             if not time_set:
@@ -290,6 +275,12 @@ async def main():
         else:
             await asyncio.sleep(10.0)
     if upython:
+        # cleanup resources
+        if thunderbolt is not None and hasattr(thunderbolt, 'device_port'):
+            thunderbolt.device_port.close()
+        if picow_network is not None:
+            picow_network.deinit()
+        config.flush()
         machine.soft_reset()
 
 
@@ -302,5 +293,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         logging.info('bye', 'main:__main__')
     finally:
-        asyncio.new_event_loop()
+        config.flush()
     logging.info('done', 'main:__main__')
