@@ -3,10 +3,10 @@
 #
 __author__ = 'J. B. Otterson'
 __copyright__ = 'Copyright 2023, 2024, 2025 J. B. Otterson N1KDO.'
-__version__ = '0.9.6'  # 2025-12-26
+__version__ = '0.9.7'  # 2026-11-16
 
 #
-# Copyright 2024, 2025 J. B. Otterson N1KDO.
+# Copyright 2024, 2025, 2026 J. B. Otterson N1KDO.
 #
 # Redistribution and use in source and binary forms, with or without modification,
 # are permitted provided that the following conditions are met:
@@ -37,7 +37,7 @@ import time
 import micro_logging as logging
 
 from http_server import (HttpServer,
-                         HTTP_STATUS_OK, HTTP_STATUS_BAD_REQUEST, HTTP_STATUS_CONFLICT,
+                         HTTP_STATUS_OK, HTTP_STATUS_BAD_REQUEST, HTTP_STATUS_MOVED_PERMANENTLY,
                          HTTP_VERB_GET, HTTP_VERB_POST)
 from thunderbolt import Thunderbolt
 from morse_code import MorseCode
@@ -88,7 +88,7 @@ config = ConfigData()
 # noinspection PyUnusedLocal
 @http_server.route(b'/')
 async def slash_callback(http, verb, args, reader, writer, request_headers=None):  # callback for '/'
-    http_status = 301
+    http_status = HTTP_STATUS_MOVED_PERMANENTLY
     bytes_sent = await http.send_simple_response(writer, http_status, None, None, [b'Location: /thunderbolt.html'])
     return bytes_sent, http_status
 
@@ -99,7 +99,7 @@ async def api_config_callback(http, verb, args, reader, writer, request_headers=
     if verb == HTTP_VERB_GET:
         payload = dict(config.get_data())
         payload['secret'] = ''  # do not return the secret
-        http_status = 200
+        http_status = HTTP_STATUS_OK
         bytes_sent = await http.send_simple_response(writer, http_status, http.CT_APP_JSON, payload)
     elif verb == HTTP_VERB_POST:
         dirty = False
@@ -185,15 +185,15 @@ async def api_config_callback(http, verb, args, reader, writer, request_headers=
             if dirty:
                 config.flush()
             response = b'ok\r\n'
-            http_status = 200
+            http_status = HTTP_STATUS_OK
             bytes_sent = await http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
         else:
             response = b'parameter out of range\r\n'
-            http_status = 400
+            http_status = HTTP_STATUS_BAD_REQUEST
             bytes_sent = await http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
     else:
         response = b'GET or POST only.'
-        http_status = 400
+        http_status = HTTP_STATUS_BAD_REQUEST
         bytes_sent = await http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
     return bytes_sent, http_status
 
@@ -205,10 +205,10 @@ async def api_restart_callback(http, verb, args, reader, writer, request_headers
     if upython:
         keep_running = False
         response = b'ok\r\n'
-        http_status = 200
+        http_status = HTTP_STATUS_OK
         bytes_sent = http.send_simple_response(writer, http_status, http.CT_TEXT_TEXT, response)
     else:
-        http_status = 400
+        http_status = HTTP_STATUS_BAD_REQUEST
         response = b'not permitted except on PICO-W'
         bytes_sent = http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
     return bytes_sent, http_status
@@ -222,7 +222,7 @@ async def api_status_callback(http, verb, args, reader, writer, request_headers=
         response = thunderbolt.get_status()
     else:
         response = b'{"error": "no thunderbolt"}'
-    http_status = 200
+    http_status = HTTP_STATUS_OK
     bytes_sent = await http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
     return bytes_sent, http_status
 
@@ -284,7 +284,7 @@ async def main():
                 try:
                     _rtc.datetime((tt[0], tt[1], tt[2], tt[6], tt[3], tt[4], tt[5], 0))
                 except OSError as e:
-                    print(e)
+                    logging.exception('OSerror setting RTC', 'main:main', exc_info=e)
                 if time.time() > 1700000000:
                     time_set = True
         else:
@@ -295,7 +295,7 @@ async def main():
 
 if __name__ == '__main__':
     logging.set_level(logging.INFO)
-    # logging.set_level(logging.DEBUG)
+    #logging.set_level(logging.DEBUG)
     logging.info('starting', 'main:__main__')
     try:
         asyncio.run(main())

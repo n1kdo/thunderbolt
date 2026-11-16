@@ -3,11 +3,12 @@
   "files": [
     "content/",
     "data/",
+    "cached_config_data.py",
+    "config_data.py",
     "http_server.py",
     "thunderbolt.py",
     "main.py",
     "micro_logging.py",
-    "not_machine.py",
     "utils.py",
     "morse_code.py",
     "picow_network.py",
