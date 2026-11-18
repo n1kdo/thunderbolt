@@ -20,7 +20,7 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-__version__ = '0.0.9'
+__version__ = '0.0.91'  # 2026-11-18
 """
 This was written by listening to the serial output of a Trimble Thunderbolt,
 both when running standalone, and also when being "managed" by 
@@ -30,18 +30,13 @@ There is code to parse data out of most of the TSIP messages, every one that I s
 A lot of the data parsing is commented out in the interest of time and space.
 """
 
+import asyncio
 import gc
 import struct
 
 from serialport import SerialPort
 from utils import upython, milliseconds, get_timestamp_from_secs
-
-if upython:
-    import micro_logging as logging
-    import uasyncio as asyncio
-else:
-    import asyncio
-    import micro_logging as logging
+import micro_logging as logging
 
 # message bytes
 ETX = 0x03  # end of message
@@ -245,12 +240,12 @@ class Thunderbolt:
                 # see Section A.9.34 in Thunderbolt Book, page A-29
                 # logging.debug(f'satellite selection list, len={offset}', 'thunderbolt:process_buffer:0x6d')
                 # print(hexdump_buffer(buffer[:offset]))
-                num_sats = offset - 19
+                num_sats = offset - 18
                 # logging.debug(f'num_sats={num_sats}', 'thunderbolt:process_buffer:0x6d')
-                fmt = '>xBffff' + 'b' * num_sats
+                fmt = '>Bffff' + 'b' * num_sats
                 # print(f'fmt = {fmt}')
                 # print(f'size={struct.calcsize(fmt)}')
-                stuff = struct.unpack(fmt, buffer[:offset])
+                stuff = struct.unpack(fmt, buffer[1:offset])
                 # print(stuff)
                 bm = stuff[0]
                 # logging.info(f'bits={bm:08b}', 'thunderbolt:process_buffer:0x6d')
@@ -279,7 +274,7 @@ class Thunderbolt:
                     self.fix_dim = 0
                 num_sats = (bm & 0xf0) >> 4
                 # logging.debug(f'fix_dim = {self.fix_dim}, num_sats = {num_sats}',  'thunderbolt:process_buffer:0x6d')
-                self.satellites = sorted(list(stuff[6:]))
+                self.satellites = sorted(list(stuff[5:]))
                 # print(stuff)
                 # print(self.fix_dim, self.pdop, self.hdop, self.vdop, self.tdop, self.satellites)
                 # print()

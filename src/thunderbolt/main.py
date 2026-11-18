@@ -3,7 +3,7 @@
 #
 __author__ = 'J. B. Otterson'
 __copyright__ = 'Copyright 2023, 2024, 2025 J. B. Otterson N1KDO.'
-__version__ = '0.9.8'  # 2026-11-16
+__version__ = '0.9.9'  # 2026-11-18
 
 #
 # Copyright 2024, 2025, 2026 J. B. Otterson N1KDO.
@@ -203,10 +203,16 @@ async def api_restart_callback(http, verb, args, reader, writer, request_headers
 @http_server.route(b'/api/status')
 async def api_status_callback(http, verb, args, reader, writer, request_headers=None):
     if thunderbolt is not None:
-        response = thunderbolt.get_status()
+        try:
+            response = thunderbolt.get_status()
+            http_status = HTTP_STATUS_OK
+        except Exception as e:
+            logging.error('Error in api_status_callback: %s' % e, 'main:api_status_callback')
+            response = {'error': 'internal server error during status collection'}
+            http_status = HTTP_STATUS_INTERNAL_SERVER_ERROR
     else:
-        response = b'{"error": "no thunderbolt"}'
-    http_status = HTTP_STATUS_OK
+        response = {'error': 'no thunderbolt'}
+        http_status = HTTP_STATUS_OK
     bytes_sent = await http.send_simple_response(writer, http_status, http.CT_APP_JSON, response)
     return bytes_sent, http_status
 
